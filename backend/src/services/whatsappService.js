@@ -29,27 +29,52 @@ class WhatsAppService {
     if (process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID) {
       try {
         const url = `${process.env.WHATSAPP_API_URL || 'https://graph.facebook.com/v21.0'}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
-        await axios.post(
-          url,
+        const templateName = (process.env.WHATSAPP_OTP_TEMPLATE || '').trim();
+        const templateComponents = [
           {
-            messaging_product: 'whatsapp',
-            recipient_type: 'individual',
-            to: formattedPhone,
-            type: 'text',
-            text: { body: message }
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
-              'Content-Type': 'application/json'
-            }
+            type: 'body',
+            parameters: [{ type: 'text', text: String(otp) }]
           }
-        );
+        ];
+        if (process.env.WHATSAPP_OTP_BUTTON === 'true') {
+          templateComponents.push({
+            type: 'button',
+            sub_type: 'url',
+            index: '0',
+            parameters: [{ type: 'text', text: String(otp) }]
+          });
+        }
+        const payload = templateName
+          ? {
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: formattedPhone,
+              type: 'template',
+              template: {
+                name: templateName,
+                language: { code: process.env.WHATSAPP_TEMPLATE_LANG || 'en_US' },
+                components: templateComponents
+              }
+            }
+          : {
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: formattedPhone,
+              type: 'text',
+              text: { body: message }
+            };
+
+        await axios.post(url, payload, {
+          headers: {
+            Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+            'Content-Type': 'application/json'
+          }
+        });
         return { success: true, mode: 'API_DISPATCH' };
       } catch (err) {
-        console.error('[WhatsApp API Error]:', err.response?.data || err.message);
-        // Fallback to logged console in development
-        return { success: true, mode: 'CONSOLE_FALLBACK', error: err.message };
+        const metaError = err.response?.data?.error?.message || err.response?.data || err.message;
+        console.error('[WhatsApp API Error]:', metaError);
+        return { success: true, mode: 'CONSOLE_FALLBACK', error: String(metaError) };
       }
     }
 
