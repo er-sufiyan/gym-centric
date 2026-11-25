@@ -3,6 +3,7 @@ import {
   Search,
   ArrowUpRight,
   Lock,
+  LogOut,
   Menu,
   X,
   Crown,
@@ -28,6 +29,8 @@ export default function SidebarLayout({
   userProfile = { initial: 'SA', name: 'Super Admin', role: 'Administrator' },
   dbConnected = false,
   onOpenLogin,
+  allowPortalSwitch = true,
+  onLogout,
   children
 }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -106,27 +109,43 @@ export default function SidebarLayout({
       {/* Bottom Footer Links & Profile (Matching Reference Bottom-Left) */}
       <div className="pt-4 border-t border-slate-800/70 space-y-4">
         <div className="space-y-1 px-2">
-          <button
-            type="button"
-            onClick={() => {
-              setActiveRole(activeRole === 'superadmin' ? 'gym' : 'superadmin');
-              setSearchQuery('');
-              setMobileMenuOpen(false);
-            }}
-            className="w-full flex items-center gap-2.5 py-1.5 text-xs font-medium text-cyan-400 hover:text-cyan-300 transition-colors"
-          >
-            <ArrowUpRight className="w-3.5 h-3.5" />
-            <span>{activeRole === 'superadmin' ? 'Open Gym Owner Portal' : 'Open Super Admin Portal'}</span>
-          </button>
+          {allowPortalSwitch && (
+            <button
+              type="button"
+              onClick={() => {
+                setActiveRole(activeRole === 'superadmin' ? 'gym' : 'superadmin');
+                setSearchQuery('');
+                setMobileMenuOpen(false);
+              }}
+              className="w-full flex items-center gap-2.5 py-1.5 text-xs font-medium text-cyan-400 hover:text-cyan-300 transition-colors"
+            >
+              <ArrowUpRight className="w-3.5 h-3.5" />
+              <span>{activeRole === 'superadmin' ? 'Open Gym Owner Portal' : 'Open Super Admin Portal'}</span>
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={onOpenLogin}
-            className="w-full flex items-center gap-2.5 py-1.5 text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors"
-          >
-            <ArrowUpRight className="w-3.5 h-3.5" />
-            <span>2FA Login / Switch</span>
-          </button>
+          {onLogout ? (
+            <button
+              type="button"
+              onClick={() => {
+                setMobileMenuOpen(false);
+                onLogout();
+              }}
+              className="w-full flex items-center gap-2.5 py-1.5 text-xs font-medium text-rose-400 hover:text-rose-300 transition-colors"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Sign Out</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onOpenLogin}
+              className="w-full flex items-center gap-2.5 py-1.5 text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              <ArrowUpRight className="w-3.5 h-3.5" />
+              <span>Gym Owner OTP Login</span>
+            </button>
+          )}
         </div>
 
         <div className="flex items-center justify-between gap-2 px-2 pt-3 border-t border-slate-800/70">
@@ -197,42 +216,44 @@ export default function SidebarLayout({
               </div>
             </div>
 
-            {/* Right: Portal Switcher + Tenant Switcher (when in Gym Owner mode) */}
+            {/* Right: Portal Switcher + Tenant Switcher (Admin mode only) or Logout (Gym Owner mode) */}
             <div className="flex items-center gap-2.5 flex-wrap">
-              <div className="flex items-center bg-[#0b1418] p-1 rounded-xl border border-slate-800/90 text-xs">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveRole('superadmin');
-                    setSearchQuery('');
-                  }}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all ${
-                    activeRole === 'superadmin'
-                      ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'
-                      : 'text-slate-400 hover:text-white border border-transparent'
-                  }`}
-                >
-                  <Crown className="w-3.5 h-3.5" />
-                  Super Admin
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveRole('gym');
-                    setSearchQuery('');
-                  }}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all ${
-                    activeRole === 'gym'
-                      ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'
-                      : 'text-slate-400 hover:text-white border border-transparent'
-                  }`}
-                >
-                  <Dumbbell className="w-3.5 h-3.5" />
-                  Gym Owner
-                </button>
-              </div>
+              {allowPortalSwitch && (
+                <div className="flex items-center bg-[#0b1418] p-1 rounded-xl border border-slate-800/90 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveRole('superadmin');
+                      setSearchQuery('');
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all ${
+                      activeRole === 'superadmin'
+                        ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'
+                        : 'text-slate-400 hover:text-white border border-transparent'
+                    }`}
+                  >
+                    <Crown className="w-3.5 h-3.5" />
+                    Super Admin
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveRole('gym');
+                      setSearchQuery('');
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all ${
+                      activeRole === 'gym'
+                        ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'
+                        : 'text-slate-400 hover:text-white border border-transparent'
+                    }`}
+                  >
+                    <Dumbbell className="w-3.5 h-3.5" />
+                    Gym Owner
+                  </button>
+                </div>
+              )}
 
-              {activeRole === 'gym' && activeGym && (
+              {allowPortalSwitch && activeRole === 'gym' && activeGym && (
                 <div className="relative bg-[#0b1418] border border-slate-800/90 rounded-xl px-3 py-1.5 flex items-center gap-2">
                   <span
                     className={`w-2 h-2 rounded-full ${
@@ -255,15 +276,27 @@ export default function SidebarLayout({
                 </div>
               )}
 
-              <button
-                type="button"
-                onClick={onOpenLogin}
-                className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#0b1418] border border-slate-800/90 text-xs font-semibold text-slate-400 hover:text-cyan-300 transition-colors"
-                title="Preview 2FA Login"
-              >
-                <Lock className="w-3.5 h-3.5" />
-                <span>2FA</span>
-              </button>
+              {onLogout ? (
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#0b1418] border border-slate-800/90 text-xs font-semibold text-rose-400 hover:text-rose-300 hover:border-rose-500/40 transition-colors"
+                  title="Sign out to OTP login"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Logout</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onOpenLogin}
+                  className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#0b1418] border border-slate-800/90 text-xs font-semibold text-slate-400 hover:text-cyan-300 transition-colors"
+                  title="Open Gym Owner OTP Login"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>OTP Login</span>
+                </button>
+              )}
             </div>
           </div>
         </header>

@@ -57,7 +57,9 @@ export default function GymDashboard({
   ledgerEntries = payments,
   setLedgerEntries = setPayments,
   dbConnected = false,
-  onOpenLogin
+  onOpenLogin,
+  allowPortalSwitch = true,
+  onLogout
 }) {
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'members' | 'plans' | 'payments'
   const [memberStatusFilter, setMemberStatusFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'EXPIRED' | 'LEAST_INTERACT'
@@ -758,6 +760,8 @@ export default function GymDashboard({
       }}
       dbConnected={dbConnected}
       onOpenLogin={onOpenLogin}
+      allowPortalSwitch={allowPortalSwitch}
+      onLogout={onLogout}
     >
       {gymProfile?.status === 'BLOCKED' ? (
         <div className="max-w-xl mx-auto my-12 glass-card rounded-3xl border border-rose-500/30 p-8 text-center space-y-4">
