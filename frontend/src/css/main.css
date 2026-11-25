@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom Reset & Base (Obsidian Dark Reference Theme) */
+body {
+  margin: 0;
+  background-color: #060b0e;
+  color: #f1f5f9;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #070d10;
+}
+::-webkit-scrollbar-thumb {
+  background: #16262d;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #1f3640;
+}
+
+/* Reference Surface & Card Styling */
+.sidebar-surface {
+  background: #081014;
+  border-color: rgba(148, 163, 184, 0.1);
+}
+
+.glass-card {
+  background: #0b1418;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.glass-card-hover {
+  transition: all 0.2s ease-in-out;
+}
+.glass-card-hover:hover {
+  border-color: rgba(34, 211, 238, 0.35);
+  transform: translateY(-2px);
+}
+
+/* Pulse indicator */
+@keyframes soft-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.08); }
+}
+.pulse-badge {
+  animation: soft-pulse 2s infinite ease-in-out;
+}
