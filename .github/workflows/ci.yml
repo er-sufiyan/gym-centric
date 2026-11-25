@@ -1,0 +1,37 @@
+name: GymCentric CI Check
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    name: Build & Syntax Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: |
+          npm install
+          npm --prefix backend ci
+          npm --prefix frontend ci
+
+      - name: Backend syntax & API entry check
+        run: |
+          for f in api/*.js backend/server.js backend/seed.js $(find backend/src -name "*.js"); do
+            node --check "$f"
+          done
+          node -e "require('./api/index.js'); console.log('API entry OK');"
+
+      - name: Frontend production build
+        run: npm --prefix frontend run build
