@@ -4,6 +4,7 @@ const {
   getBootstrapData,
   createGymOwner,
   toggleGymStatus,
+  deleteGymOwner,
   updateGymPlan,
   recordSaasPayment,
   deleteSaasPayment,
@@ -14,23 +15,30 @@ const {
   deleteGymPlan,
   recordMemberPayment
 } = require('../controllers/dashboardController');
+const {
+  protect,
+  optionalAuth,
+  superAdminOnly,
+  authorizeGymScope
+} = require('../middleware/authMiddleware');
 
-// Bootstrap full multi-tenant dashboard state
-router.get('/bootstrap', getBootstrapData);
+// Bootstrap dashboard state (scoped by JWT role: SUPER_ADMIN vs GYM_OWNER)
+router.get('/bootstrap', optionalAuth, getBootstrapData);
 
-// Super Admin routes
-router.post('/superadmin/gyms', createGymOwner);
-router.patch('/superadmin/gyms/:gymId/status', toggleGymStatus);
-router.put('/superadmin/gyms/:gymId/plan', updateGymPlan);
-router.post('/superadmin/payments', recordSaasPayment);
-router.delete('/superadmin/payments/:paymentId', deleteSaasPayment);
+// Super Admin routes (strictly password/JWT protected)
+router.post('/superadmin/gyms', protect, superAdminOnly, createGymOwner);
+router.patch('/superadmin/gyms/:gymId/status', protect, superAdminOnly, toggleGymStatus);
+router.delete('/superadmin/gyms/:gymId', protect, superAdminOnly, deleteGymOwner);
+router.put('/superadmin/gyms/:gymId/plan', protect, superAdminOnly, updateGymPlan);
+router.post('/superadmin/payments', protect, superAdminOnly, recordSaasPayment);
+router.delete('/superadmin/payments/:paymentId', protect, superAdminOnly, deleteSaasPayment);
 
-// Gym Owner routes (scoped per gymId)
-router.post('/gyms/:gymId/members', createMember);
-router.patch('/gyms/:gymId/members/:memberId/status', toggleMemberStatus);
-router.delete('/gyms/:gymId/members/:memberId', deleteMember);
-router.post('/gyms/:gymId/plans', createGymPlan);
-router.delete('/gyms/:gymId/plans/:planId', deleteGymPlan);
-router.post('/gyms/:gymId/payments', recordMemberPayment);
+// Gym Owner routes (scoped per authenticated gymId or SUPER_ADMIN)
+router.post('/gyms/:gymId/members', protect, authorizeGymScope, createMember);
+router.patch('/gyms/:gymId/members/:memberId/status', protect, authorizeGymScope, toggleMemberStatus);
+router.delete('/gyms/:gymId/members/:memberId', protect, authorizeGymScope, deleteMember);
+router.post('/gyms/:gymId/plans', protect, authorizeGymScope, createGymPlan);
+router.delete('/gyms/:gymId/plans/:planId', protect, authorizeGymScope, deleteGymPlan);
+router.post('/gyms/:gymId/payments', protect, authorizeGymScope, recordMemberPayment);
 
 module.exports = router;
