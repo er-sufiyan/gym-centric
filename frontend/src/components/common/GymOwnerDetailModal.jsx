@@ -10,7 +10,8 @@ import {
   MessageCircle,
   RefreshCw,
   Power,
-  Receipt
+  Receipt,
+  Trash2
 } from 'lucide-react';
 import { getOneYearHistory } from '../../utils/billingCycle';
 import MonthlyResetBanner from './MonthlyResetBanner';
@@ -24,7 +25,8 @@ export default function GymOwnerDetailModal({
   onSendActivePlan,
   onSendInvoiceReceipt,
   onRenewPlan,
-  onToggleStatus
+  onToggleStatus,
+  onDeleteGym
 }) {
   const yearlyHistory = useMemo(() => {
     if (!gym) return getOneYearHistory([]);
@@ -241,6 +243,19 @@ export default function GymOwnerDetailModal({
           >
             <Power className="w-3.5 h-3.5" /> {gym.status === 'ACTIVE' ? 'Block' : 'Allow'}
           </button>
+
+          {gym.status === 'BLOCKED' && onDeleteGym && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onDeleteGym(gym);
+              }}
+              className="py-2.5 px-4 rounded-xl text-xs font-extrabold bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white transition-colors flex items-center gap-1.5"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete Gym
+            </button>
+          )}
         </div>
       </div>
     </div>

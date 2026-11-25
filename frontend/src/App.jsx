@@ -2,7 +2,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import SuperAdminDashboard from './pages/superadmin/SuperAdminDashboard';
 import GymDashboard from './pages/gym/GymDashboard';
 import LoginPage from './pages/auth/LoginPage';
-import { fetchBootstrap } from './services/api';
+import AdminLoginPage from './pages/auth/AdminLoginPage';
+import {
+  fetchBootstrap,
+  apiVerifyAdminToken,
+  ADMIN_SESSION_KEY,
+  OWNER_SESSION_KEY
+} from './services/api';
 import {
   INITIAL_GYMS,
   INITIAL_PLANS_BY_GYM,
@@ -11,17 +17,15 @@ import {
   INITIAL_SAAS_PAYMENTS
 } from './data/initialData';
 
-const OWNER_SESSION_KEY = 'gymcentric_owner_session';
-
 const isAdminPath = () => {
   if (typeof window === 'undefined') return false;
   const path = window.location.pathname.toLowerCase();
   return path === '/admin' || path.startsWith('/admin/');
 };
 
-const readStoredOwnerSession = () => {
+const readStoredSession = (key) => {
   try {
-    const raw = localStorage.getItem(OWNER_SESSION_KEY);
+    const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -34,7 +38,8 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [dbConnected, setDbConnected] = useState(false);
 
-  const [authenticatedOwner, setAuthenticatedOwner] = useState(readStoredOwnerSession);
+  const [adminSession, setAdminSession] = useState(() => readStoredSession(ADMIN_SESSION_KEY));
+  const [authenticatedOwner, setAuthenticatedOwner] = useState(() => readStoredSession(OWNER_SESSION_KEY));
 
   const [gyms, setGyms] = useState(INITIAL_GYMS);
   const [activeGymId, setActiveGymId] = useState(INITIAL_GYMS[0].id);
@@ -53,9 +58,9 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
-  const syncFromDatabase = useCallback(async () => {
+  const syncFromDatabase = useCallback(async (tokenOverride) => {
     try {
-      const res = await fetchBootstrap();
+      const res = await fetchBootstrap(tokenOverride);
       if (!res?.data) return;
       const {
         gyms: dbGyms,
@@ -81,9 +86,38 @@ export default function App() {
     }
   }, []);
 
+  // Sync database state on route/session change and verify persisted /admin JWT
   useEffect(() => {
-    syncFromDatabase();
-  }, [syncFromDatabase]);
+    let active = true;
+
+    const init = async () => {
+      if (isAdminRoute) {
+        if (adminSession?.token) {
+          const valid = await apiVerifyAdminToken(adminSession.token);
+          if (!active) return;
+          if (!valid) {
+            try {
+              localStorage.removeItem(ADMIN_SESSION_KEY);
+            } catch {
+              // ignore
+            }
+            setAdminSession(null);
+            return;
+          }
+          await syncFromDatabase(adminSession.token);
+        }
+      } else if (authenticatedOwner?.token) {
+        await syncFromDatabase(authenticatedOwner.token);
+      } else {
+        await syncFromDatabase('');
+      }
+    };
+
+    init();
+    return () => {
+      active = false;
+    };
+  }, [isAdminRoute, adminSession?.token, authenticatedOwner?.token, syncFromDatabase]);
 
   const normalizeDigits = (val = '') => String(val || '').replace(/\D/g, '').slice(-10);
 
@@ -152,6 +186,44 @@ export default function App() {
     }
   };
 
+  const handleDeleteGym = (gymId) => {
+    setGyms((prev) => {
+      const remaining = prev.filter((g) => g.id !== gymId);
+      setActiveGymId((currId) => (currId === gymId ? remaining[0]?.id || '' : currId));
+      return remaining;
+    });
+    setMembersByGym((prev) => {
+      const next = { ...prev };
+      delete next[gymId];
+      return next;
+    });
+    setPlansByGym((prev) => {
+      const next = { ...prev };
+      delete next[gymId];
+      return next;
+    });
+    setMemberPaymentsByGym((prev) => {
+      const next = { ...prev };
+      delete next[gymId];
+      return next;
+    });
+    setGymLedgerByGym((prev) => {
+      const next = { ...prev };
+      delete next[gymId];
+      return next;
+    });
+    setSaasPayments((prev) => prev.filter((p) => p.gymId !== gymId));
+
+    if (authenticatedOwner?.gymId === gymId) {
+      try {
+        localStorage.removeItem(OWNER_SESSION_KEY);
+      } catch {
+        // ignore
+      }
+      setAuthenticatedOwner(null);
+    }
+  };
+
   const handleLoginSuccess = async (gymData, token) => {
     const matched = gyms.find(
       (g) => g.id === gymData.id || (normalizeDigits(g.phone) && normalizeDigits(g.phone) === normalizeDigits(gymData.phone))
@@ -190,7 +262,7 @@ export default function App() {
     setActiveGymId(resolvedGym.id);
     setSearchQuery('');
 
-    await syncFromDatabase();
+    await syncFromDatabase(session.token);
   };
 
   const handleOwnerLogout = () => {
@@ -203,6 +275,29 @@ export default function App() {
     setSearchQuery('');
   };
 
+  const handleAdminLoginSuccess = async (token) => {
+    const session = { token };
+    try {
+      localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(session));
+    } catch {
+      // ignore
+    }
+    setAdminSession(session);
+    setAdminRole('superadmin');
+    setSearchQuery('');
+    await syncFromDatabase(token);
+  };
+
+  const handleAdminLogout = () => {
+    try {
+      localStorage.removeItem(ADMIN_SESSION_KEY);
+    } catch {
+      // ignore
+    }
+    setAdminSession(null);
+    setSearchQuery('');
+  };
+
   const navigateToGymLogin = () => {
     if (typeof window !== 'undefined' && window.location.pathname !== '/') {
       window.history.pushState({}, '', '/');
@@ -211,8 +306,17 @@ export default function App() {
     setSearchQuery('');
   };
 
-  // ROUTE 1: /admin -> Dedicated Super Admin Portal
+  // ROUTE 1: /admin -> Password-Protected Super Admin Portal
   if (isAdminRoute) {
+    if (!adminSession?.token) {
+      return (
+        <AdminLoginPage
+          onAdminLoginSuccess={handleAdminLoginSuccess}
+          onGoOwnerPortal={navigateToGymLogin}
+        />
+      );
+    }
+
     return adminRole === 'superadmin' ? (
       <SuperAdminDashboard
         activeRole={adminRole}
@@ -225,11 +329,13 @@ export default function App() {
         saasPayments={saasPayments}
         setSaasPayments={setSaasPayments}
         onAddGym={handleAddGym}
+        onDeleteGym={handleDeleteGym}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         dbConnected={dbConnected}
         onOpenLogin={navigateToGymLogin}
         allowPortalSwitch={true}
+        onLogout={handleAdminLogout}
       />
     ) : (
       <GymDashboard
@@ -251,13 +357,14 @@ export default function App() {
         dbConnected={dbConnected}
         onOpenLogin={navigateToGymLogin}
         allowPortalSwitch={true}
+        onLogout={handleAdminLogout}
       />
     );
   }
 
-  // ROUTE 2: / -> Gym Owner Phone OTP Portal (Login or New Gym Registration)
+  // ROUTE 2: / -> Gym Owner Email/Mobile OTP Portal (Login or New Gym Registration)
   if (!authenticatedOwner || !loggedInGym) {
-    return <LoginPage gyms={gyms} onLoginSuccess={handleLoginSuccess} />;
+    return <LoginPage gyms={[]} onLoginSuccess={handleLoginSuccess} />;
   }
 
   // Scoped Gym Owner Dashboard (strictly for the OTP-verified Gym Owner)

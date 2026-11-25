@@ -33,6 +33,7 @@ import { getOneYearHistory } from '../../utils/billingCycle';
 import {
   apiCreateGym,
   apiToggleGymStatus,
+  apiDeleteGym,
   apiUpdateGymPlan,
   apiRecordSaasPayment,
   apiDeleteSaasPayment
@@ -49,6 +50,7 @@ export default function SuperAdminDashboard({
   saasPayments,
   setSaasPayments,
   onAddGym,
+  onDeleteGym,
   searchQuery = '',
   setSearchQuery,
   dbConnected = false,
@@ -67,6 +69,7 @@ export default function SuperAdminDashboard({
   const [isAddGymOpen, setIsAddGymOpen] = useState(false);
   const [isBroadcastOpen, setIsBroadcastOpen] = useState(false);
   const [paymentToDelete, setPaymentToDelete] = useState(null);
+  const [gymToDelete, setGymToDelete] = useState(null);
   const [receiptToSend, setReceiptToSend] = useState(null);
   const [sendWaOnManual, setSendWaOnManual] = useState(true);
   const [sendWaOnOnboard, setSendWaOnOnboard] = useState(true);
@@ -976,6 +979,19 @@ export default function SuperAdminDashboard({
                               <Power className="w-3 h-3" />
                               {gym.status === 'ACTIVE' ? 'Block' : 'Allow'}
                             </button>
+
+                            {gym.status === 'BLOCKED' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setGymToDelete(gym);
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg text-[11px] font-black bg-rose-500/20 text-rose-300 hover:bg-rose-500 hover:text-white transition-colors flex items-center gap-1"
+                                title="Permanently delete blocked gym and all its members/data"
+                              >
+                                <Trash2 className="w-3 h-3" /> Delete
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1387,6 +1403,7 @@ export default function SuperAdminDashboard({
           setIsPlanModalOpen(true);
         }}
         onToggleStatus={toggleGymStatus}
+        onDeleteGym={(gym) => setGymToDelete(gym)}
       />
 
       <WhatsAppReceiptModal
@@ -1481,6 +1498,36 @@ export default function SuperAdminDashboard({
           setSaasPayments((prev) => prev.filter((item) => item.id !== targetId));
           setPaymentToDelete(null);
           showToast('SaaS transaction deleted from site and database.');
+        }}
+      />
+
+      <ConfirmDeleteModal
+        isOpen={!!gymToDelete}
+        onClose={() => setGymToDelete(null)}
+        title={`Delete ${gymToDelete?.gymName || 'Blocked Gym'}`}
+        message={`Are you sure you want to permanently delete ${gymToDelete?.gymName} (${gymToDelete?.ownerName})? This will permanently erase the gym, all ${(membersByGym[gymToDelete?.id] || []).length} members, all membership plans, payments, ledger entries, and SaaS billing history from both this site and the database.`}
+        confirmLabel="Delete Gym & All Data"
+        onConfirm={async () => {
+          if (!gymToDelete) return;
+          const targetId = gymToDelete.id;
+          const targetName = gymToDelete.gymName;
+          if (dbConnected) {
+            try {
+              await apiDeleteGym(targetId);
+            } catch (err) {
+              showToast(err.message);
+              setGymToDelete(null);
+              return;
+            }
+          }
+          if (onDeleteGym) {
+            onDeleteGym(targetId);
+          } else {
+            setGyms((prev) => prev.filter((g) => g.id !== targetId));
+            setSaasPayments((prev) => prev.filter((p) => p.gymId !== targetId));
+          }
+          setGymToDelete(null);
+          showToast(`${targetName} and all related gym & member data permanently deleted.`);
         }}
       />
     </SidebarLayout>

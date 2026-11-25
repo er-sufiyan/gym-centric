@@ -123,19 +123,39 @@ exports.getBootstrapData = async (req, res) => {
   try {
     await runRetentionCleanup();
 
+    // Unauthenticated visitors only confirm DB status without exposing tenant/member records
+    if (!req.gym) {
+      return res.status(200).json({
+        success: true,
+        authenticated: false,
+        data: {
+          gyms: [],
+          plansByGym: {},
+          membersByGym: {},
+          memberPaymentsByGym: {},
+          gymLedgerByGym: {},
+          saasPayments: []
+        }
+      });
+    }
+
     const oneYearAgo = new Date();
     oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
 
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
+    const isSuperAdmin = req.gym.role === 'SUPER_ADMIN';
+    const gymFilter = isSuperAdmin ? { role: { $ne: 'SUPER_ADMIN' } } : { _id: req.gym._id };
+    const scopedFilter = isSuperAdmin ? {} : { gymId: req.gym._id };
+
     const [gymDocs, planDocs, memberDocs, paymentDocs, ledgerDocs, saasDocs] = await Promise.all([
-      Gym.find({ role: { $ne: 'SUPER_ADMIN' } }).sort({ createdAt: 1 }),
-      GymPlan.find({}).sort({ createdAt: 1 }),
-      Member.find({}).sort({ createdAt: -1 }),
-      Payment.find({ paymentDate: { $gte: oneYearAgo } }).sort({ paymentDate: -1 }),
-      GymLedgerEntry.find({ paymentDate: { $gte: startOfMonth } }).sort({ paymentDate: -1 }),
-      SaasPayment.find({ paymentDate: { $gte: oneYearAgo } }).sort({ paymentDate: -1 })
+      Gym.find(gymFilter).sort({ createdAt: 1 }),
+      GymPlan.find(scopedFilter).sort({ createdAt: 1 }),
+      Member.find(scopedFilter).sort({ createdAt: -1 }),
+      Payment.find({ ...scopedFilter, paymentDate: { $gte: oneYearAgo } }).sort({ paymentDate: -1 }),
+      GymLedgerEntry.find({ ...scopedFilter, paymentDate: { $gte: startOfMonth } }).sort({ paymentDate: -1 }),
+      isSuperAdmin ? SaasPayment.find({ paymentDate: { $gte: oneYearAgo } }).sort({ paymentDate: -1 }) : Promise.resolve([])
     ]);
 
     const gyms = gymDocs.map(serializeGym);
@@ -281,6 +301,50 @@ exports.toggleGymStatus = async (req, res) => {
     await gym.save({ validateBeforeSave: false });
 
     return res.status(200).json({ success: true, gym: serializeGym(gym) });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * DELETE /api/dashboard/superadmin/gyms/:gymId
+ * Permanently deletes a BLOCKED gym and ALL related members, plans, payments, ledger, and SaaS billing data
+ */
+exports.deleteGymOwner = async (req, res) => {
+  try {
+    const gym = await Gym.findById(req.params.gymId);
+    if (!gym) {
+      return res.status(404).json({ success: false, message: 'Gym not found' });
+    }
+
+    if (gym.status !== 'BLOCKED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Only BLOCKED gyms can be permanently deleted. Block the gym first.'
+      });
+    }
+
+    const [membersRes, plansRes, paymentsRes, saasRes, ledgerRes] = await Promise.all([
+      Member.deleteMany({ gymId: gym._id }),
+      GymPlan.deleteMany({ gymId: gym._id }),
+      Payment.deleteMany({ gymId: gym._id }),
+      SaasPayment.deleteMany({ gymId: gym._id }),
+      GymLedgerEntry.deleteMany({ gymId: gym._id })
+    ]);
+
+    await Gym.findByIdAndDelete(gym._id);
+
+    return res.status(200).json({
+      success: true,
+      deletedGymId: String(gym._id),
+      deletedCounts: {
+        members: membersRes.deletedCount || 0,
+        plans: plansRes.deletedCount || 0,
+        payments: paymentsRes.deletedCount || 0,
+        saasPayments: saasRes.deletedCount || 0,
+        ledgerEntries: ledgerRes.deletedCount || 0
+      }
+    });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }

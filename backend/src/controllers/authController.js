@@ -1,5 +1,8 @@
 const Gym = require('../models/Gym');
 const GymPlan = require('../models/GymPlan');
+const LoginAttempt = require('../models/LoginAttempt');
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const whatsappService = require('../services/whatsappService');
 const emailService = require('../services/emailService');
@@ -402,4 +405,143 @@ exports.getMe = async (req, res) => {
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Error fetching profile', error: error.message });
   }
+};
+
+/**
+ * @desc    Super Admin Password Login (10+ char password, max 5 failed attempts / 1 min -> 15 min lockout)
+ * @route   POST /api/auth/admin-login
+ * @access  Public
+ */
+exports.adminLogin = async (req, res) => {
+  try {
+    const { password } = req.body;
+    const rawIp =
+      (req.headers['x-forwarded-for'] && String(req.headers['x-forwarded-for']).split(',')[0].trim()) ||
+      req.ip ||
+      'unknown';
+    const rateKey = `admin:${rawIp}`;
+    const now = Date.now();
+    const ONE_MINUTE_MS = 60 * 1000;
+    const LOCKOUT_MS = 15 * 60 * 1000;
+    const MAX_ATTEMPTS_PER_MINUTE = 5;
+
+    let attemptDoc = await LoginAttempt.findOne({ key: rateKey });
+
+    // 1. Check active 15-minute lockout
+    if (attemptDoc?.lockedUntil && new Date(attemptDoc.lockedUntil).getTime() > now) {
+      const retryAfterSeconds = Math.ceil((new Date(attemptDoc.lockedUntil).getTime() - now) / 1000);
+      const mins = Math.ceil(retryAfterSeconds / 60);
+      return res.status(429).json({
+        success: false,
+        locked: true,
+        retryAfterSeconds,
+        attemptsRemaining: 0,
+        message: `Too many failed attempts. Please wait ${mins} minute(s) before trying again.`
+      });
+    }
+
+    const recordFailedAttempt = async (reasonMsg) => {
+      const recentAttempts = (attemptDoc?.failedTimestamps || []).filter(
+        (ts) => now - new Date(ts).getTime() <= ONE_MINUTE_MS
+      );
+      recentAttempts.push(new Date(now));
+
+      if (recentAttempts.length >= MAX_ATTEMPTS_PER_MINUTE) {
+        const lockedUntil = new Date(now + LOCKOUT_MS);
+        await LoginAttempt.findOneAndUpdate(
+          { key: rateKey },
+          {
+            key: rateKey,
+            failedTimestamps: recentAttempts,
+            lockedUntil,
+            expiresAt: new Date(now + LOCKOUT_MS + 5 * 60 * 1000)
+          },
+          { upsert: true, new: true }
+        );
+        return res.status(429).json({
+          success: false,
+          locked: true,
+          retryAfterSeconds: 15 * 60,
+          attemptsRemaining: 0,
+          message: '5 failed attempts within 1 minute. Super Admin login locked for 15 minutes.'
+        });
+      }
+
+      const attemptsRemaining = MAX_ATTEMPTS_PER_MINUTE - recentAttempts.length;
+      await LoginAttempt.findOneAndUpdate(
+        { key: rateKey },
+        {
+          key: rateKey,
+          failedTimestamps: recentAttempts,
+          lockedUntil: null,
+          expiresAt: new Date(now + 15 * 60 * 1000)
+        },
+        { upsert: true, new: true }
+      );
+
+      return res.status(401).json({
+        success: false,
+        locked: false,
+        attemptsRemaining,
+        message: `${reasonMsg} (${attemptsRemaining} attempt${attemptsRemaining === 1 ? '' : 's'} remaining before 15-min lockout).`
+      });
+    };
+
+    if (!password || String(password).length < 10) {
+      return await recordFailedAttempt('Password must be at least 10 characters');
+    }
+
+    let isMatch = false;
+    const configuredHash = (process.env.SUPER_ADMIN_PASSWORD_HASH || '').trim();
+    if (configuredHash && configuredHash.startsWith('$2')) {
+      // Compare directly against stored bcrypt password hash
+      isMatch = await bcrypt.compare(String(password), configuredHash);
+    } else {
+      const expectedPassword = String(process.env.SUPER_ADMIN_PASSWORD || 'GymAdmin@2026');
+      const salt = crypto.randomBytes(16).toString('hex');
+      const expectedDerived = crypto.scryptSync(expectedPassword, salt, 32);
+      const submittedDerived = crypto.scryptSync(String(password), salt, 32);
+      isMatch = crypto.timingSafeEqual(submittedDerived, expectedDerived);
+    }
+
+    if (!isMatch) {
+      return await recordFailedAttempt('Incorrect Super Admin password');
+    }
+
+    // Clear failed attempts upon valid login
+    if (attemptDoc) {
+      await LoginAttempt.deleteOne({ key: rateKey });
+    }
+
+    const token = generateToken('superadmin', 'SUPER_ADMIN');
+
+    return res.status(200).json({
+      success: true,
+      message: 'Super Admin authenticated',
+      token,
+      admin: {
+        id: 'superadmin',
+        name: 'Platform Super Admin',
+        role: 'SUPER_ADMIN'
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Server error during admin login', error: error.message });
+  }
+};
+
+/**
+ * @desc    Verify Super Admin Session Token
+ * @route   GET /api/auth/admin-verify
+ * @access  Private (SUPER_ADMIN)
+ */
+exports.adminVerify = async (req, res) => {
+  return res.status(200).json({
+    success: true,
+    admin: {
+      id: 'superadmin',
+      name: 'Platform Super Admin',
+      role: 'SUPER_ADMIN'
+    }
+  });
 };
