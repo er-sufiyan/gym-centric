@@ -52,7 +52,9 @@ export default function SuperAdminDashboard({
   searchQuery = '',
   setSearchQuery,
   dbConnected = false,
-  onOpenLogin
+  onOpenLogin,
+  allowPortalSwitch = true,
+  onLogout
 }) {
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'active-owners' | 'active-members' | 'tenants' | 'billing'
   const [selectedActiveGymId, setSelectedActiveGymId] = useState('ALL');
@@ -708,6 +710,8 @@ export default function SuperAdminDashboard({
       userProfile={{ initial: 'SA', name: 'Platform Super Admin', role: 'Administrator' }}
       dbConnected={dbConnected}
       onOpenLogin={onOpenLogin}
+      allowPortalSwitch={allowPortalSwitch}
+      onLogout={onLogout}
     >
       <div className="space-y-6">
         {toastMessage && (
