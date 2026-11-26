@@ -15,7 +15,8 @@ const {
   createGymPlan,
   deleteGymPlan,
   recordMemberPayment,
-  markMemberReminderSent
+  markMemberReminderSent,
+  getImageKitAuth
 } = require('../controllers/dashboardController');
 const {
   protect,
@@ -44,5 +45,6 @@ router.post('/gyms/:gymId/plans', protect, authorizeGymScope, createGymPlan);
 router.delete('/gyms/:gymId/plans/:planId', protect, authorizeGymScope, deleteGymPlan);
 router.post('/gyms/:gymId/payments', protect, authorizeGymScope, recordMemberPayment);
 router.patch('/gyms/:gymId/members/:memberId/reminder', protect, authorizeGymScope, markMemberReminderSent);
+router.get('/gyms/:gymId/imagekit-auth', protect, authorizeGymScope, getImageKitAuth);
 
 module.exports = router;

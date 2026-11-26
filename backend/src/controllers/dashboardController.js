@@ -6,6 +6,7 @@ const SaasPayment = require('../models/SaasPayment');
 const GymLedgerEntry = require('../models/GymLedgerEntry');
 const PlatformSettings = require('../models/PlatformSettings');
 const { getEndOfMonthDate, runRetentionCleanup } = require('../services/cleanupService');
+const { getUploadAuthParams, deleteImageKitFiles } = require('../services/imagekitService');
 
 async function getPlatformSettingsPayload() {
   const settings = await PlatformSettings.findOne({ key: 'default' });
@@ -366,12 +367,16 @@ exports.deleteGymOwner = async (req, res) => {
       });
     }
 
+    const memberDocsForFiles = await Member.find({ gymId: gym._id }).select('photoFileId');
+    const memberFileIds = memberDocsForFiles.map((m) => m.photoFileId).filter(Boolean);
+
     const [membersRes, plansRes, paymentsRes, saasRes, ledgerRes] = await Promise.all([
       Member.deleteMany({ gymId: gym._id }),
       GymPlan.deleteMany({ gymId: gym._id }),
       Payment.deleteMany({ gymId: gym._id }),
       SaasPayment.deleteMany({ gymId: gym._id }),
-      GymLedgerEntry.deleteMany({ gymId: gym._id })
+      GymLedgerEntry.deleteMany({ gymId: gym._id }),
+      memberFileIds.length > 0 ? deleteImageKitFiles(memberFileIds) : Promise.resolve()
     ]);
 
     await Gym.findByIdAndDelete(gym._id);
@@ -477,7 +482,17 @@ exports.deleteSaasPayment = async (req, res) => {
 exports.createMember = async (req, res) => {
   try {
     const { gymId } = req.params;
-    const { name, rollNo, phone, shift = 'MORNING', planName, planPrice, planDurationDays = 30, photoUrl } = req.body;
+    const {
+      name,
+      rollNo,
+      phone,
+      shift = 'MORNING',
+      planName,
+      planPrice,
+      planDurationDays = 30,
+      photoUrl,
+      photoFileId = ''
+    } = req.body;
 
     const expiryDate = new Date(Date.now() + Number(planDurationDays) * 24 * 60 * 60 * 1000);
     const shiftTime = shift === 'MORNING' ? '06:30 AM – 08:00 AM' : '06:00 PM – 07:30 PM';
@@ -491,6 +506,7 @@ exports.createMember = async (req, res) => {
       photoUrl:
         photoUrl ||
         'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&h=150&fit=crop&crop=faces',
+      photoFileId: String(photoFileId || '').trim(),
       admittedDate: now,
       shift,
       shiftTime,
@@ -584,7 +600,8 @@ exports.deleteMember = async (req, res) => {
 
     await Promise.all([
       Payment.deleteMany({ gymId, memberId }),
-      GymLedgerEntry.deleteMany({ gymId, memberId })
+      GymLedgerEntry.deleteMany({ gymId, memberId }),
+      deleted.photoFileId ? deleteImageKitFiles([deleted.photoFileId]) : Promise.resolve()
     ]);
 
     return res.status(200).json({ success: true, deletedMemberId: memberId });
@@ -739,6 +756,18 @@ exports.markMemberReminderSent = async (req, res) => {
     }
 
     return res.status(200).json({ success: true, member: serializeMember(member) });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * GET /api/dashboard/gyms/:gymId/imagekit-auth
+ */
+exports.getImageKitAuth = async (req, res) => {
+  try {
+    const auth = getUploadAuthParams();
+    return res.status(200).json({ success: true, ...auth });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }

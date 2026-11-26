@@ -27,6 +27,10 @@ const memberSchema = new mongoose.Schema(
       type: String,
       default: ''
     },
+    photoFileId: {
+      type: String,
+      default: ''
+    },
     admittedDate: {
       type: Date,
       default: Date.now

@@ -3,6 +3,7 @@ const Member = require('../models/Member');
 const Payment = require('../models/Payment');
 const SaasPayment = require('../models/SaasPayment');
 const GymLedgerEntry = require('../models/GymLedgerEntry');
+const { deleteImageKitFiles } = require('./imagekitService');
 
 function getEndOfMonthDate(date = new Date()) {
   return new Date(date.getFullYear(), date.getMonth() + 1, 1, 0, 0, 0, 0);
@@ -35,9 +36,10 @@ async function runRetentionCleanup() {
         { expiryDate: { $lt: threeMonthsAgo } },
         { status: 'EXPIRED', expiredAt: { $ne: null, $lt: threeMonthsAgo } }
       ]
-    }).select('_id');
+    }).select('_id photoFileId');
 
     const expiredMemberIds = expiredMembersToPurge.map((m) => m._id);
+    const expiredFileIds = expiredMembersToPurge.map((m) => m.photoFileId).filter(Boolean);
 
     const [
       deletedMemberPayments,
@@ -58,7 +60,8 @@ async function runRetentionCleanup() {
         : Promise.resolve({ deletedCount: 0 }),
       expiredMemberIds.length > 0
         ? GymLedgerEntry.deleteMany({ memberId: { $in: expiredMemberIds } })
-        : Promise.resolve({ deletedCount: 0 })
+        : Promise.resolve({ deletedCount: 0 }),
+      expiredFileIds.length > 0 ? deleteImageKitFiles(expiredFileIds) : Promise.resolve()
     ]);
 
     if (

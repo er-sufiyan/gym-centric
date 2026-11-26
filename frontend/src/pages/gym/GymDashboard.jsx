@@ -19,6 +19,7 @@ import {
   Receipt,
   MessageCircle,
   BellRing,
+  Upload,
   X
 } from 'lucide-react';
 import SidebarLayout from '../../components/common/SidebarLayout';
@@ -34,6 +35,7 @@ import ConfirmDeleteModal from '../../components/common/ConfirmDeleteModal';
 import ExpiryRemindersModal from '../../components/common/ExpiryRemindersModal';
 import { getCurrentMonthSection } from '../../utils/billingCycle';
 import { buildWhatsAppUrl, getMemberExpiryReminder } from '../../utils/whatsapp';
+import { compressMemberPhoto, formatBytes } from '../../utils/imageCompress';
 import {
   apiCreateMember,
   apiToggleMemberStatus,
@@ -41,7 +43,8 @@ import {
   apiCreateGymPlan,
   apiDeleteGymPlan,
   apiRecordMemberPayment,
-  apiMarkMemberReminderSent
+  apiMarkMemberReminderSent,
+  uploadMemberPhoto
 } from '../../services/api';
 
 export default function GymDashboard({
@@ -80,6 +83,10 @@ export default function GymDashboard({
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isOfferModalOpen, setIsOfferModalOpen] = useState(false);
   const [isRemindersModalOpen, setIsRemindersModalOpen] = useState(false);
+  const [compressedPhoto, setCompressedPhoto] = useState(null);
+  const [isCompressingPhoto, setIsCompressingPhoto] = useState(false);
+  const [isSavingMember, setIsSavingMember] = useState(false);
+  const [photoError, setPhotoError] = useState('');
   const [toastMessage, setToastMessage] = useState('');
 
   const showToast = (msg) => {
@@ -275,12 +282,40 @@ export default function GymDashboard({
     showToast('Membership plan removed.');
   };
 
+  const handlePhotoFileSelected = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setPhotoError('');
+    setIsCompressingPhoto(true);
+    try {
+      const result = await compressMemberPhoto(file, { size: 192, targetMaxBytes: 12288 });
+      setCompressedPhoto(result);
+      setNewMember((prev) => ({ ...prev, photoUrl: result.dataUrl }));
+    } catch (err) {
+      setPhotoError(err.message || 'Could not process image');
+    } finally {
+      setIsCompressingPhoto(false);
+    }
+  };
+
   const handleAddMember = async (e) => {
     e.preventDefault();
     if (!newMember.name.trim() || !newMember.rollNo.trim() || !newMember.phone.trim()) return;
 
     if (dbConnected) {
+      setIsSavingMember(true);
       try {
+        let finalPhotoUrl = newMember.photoUrl;
+        let finalPhotoFileId = '';
+
+        if (compressedPhoto) {
+          const uploaded = await uploadMemberPhoto(gymProfile.id, compressedPhoto);
+          finalPhotoUrl = uploaded.photoUrl;
+          finalPhotoFileId = uploaded.photoFileId || '';
+        }
+
         const res = await apiCreateMember(gymProfile.id, {
           name: newMember.name.trim(),
           rollNo: newMember.rollNo.trim(),
@@ -289,12 +324,15 @@ export default function GymDashboard({
           planName: newMember.planName,
           planPrice: Number(newMember.planPrice),
           planDurationDays: Number(newMember.planDurationDays),
-          photoUrl: newMember.photoUrl
+          photoUrl: finalPhotoUrl,
+          photoFileId: finalPhotoFileId
         });
         setMembers((prev) => [res.member, ...prev]);
         setPayments((prev) => [res.payment, ...prev]);
         setLedgerEntries((prev) => [res.ledgerEntry || res.payment, ...prev]);
         setIsAddModalOpen(false);
+        setCompressedPhoto(null);
+        setPhotoError('');
         const defaultPlan = gymPlans[0] || { id: '', name: '1 Month Standard', durationDays: 30, price: 1200 };
         setNewMember({
           name: '',
@@ -329,6 +367,8 @@ export default function GymDashboard({
       } catch (err) {
         showToast(err.message);
         return;
+      } finally {
+        setIsSavingMember(false);
       }
     }
 
@@ -1472,6 +1512,71 @@ export default function GymDashboard({
               </button>
             </div>
             <form onSubmit={handleAddMember} className="space-y-4">
+              {/* Mobile Camera / Gallery Photo Capture with Ultra-Low Compression */}
+              <div className="p-3 rounded-2xl bg-[#060b0e] border border-slate-800/90 flex items-center gap-3.5">
+                <div className="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-700 overflow-hidden flex items-center justify-center flex-shrink-0">
+                  {newMember.photoUrl ? (
+                    <img src={newMember.photoUrl} alt="Member preview" className="w-full h-full object-cover" />
+                  ) : (
+                    <Camera className="w-5 h-5 text-slate-500" />
+                  )}
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] font-bold text-slate-200">
+                    Member Photo{' '}
+                    <span className="text-[10px] font-normal text-cyan-400">(Auto-compressed ≤12 KB)</span>
+                  </p>
+                  {compressedPhoto ? (
+                    <p className="text-[10px] text-emerald-400 mt-0.5">
+                      {formatBytes(compressedPhoto.originalBytes)} → {formatBytes(compressedPhoto.compressedBytes)}
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      Capture with phone camera or pick from gallery
+                    </p>
+                  )}
+
+                  <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    <label className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 text-[11px] font-bold transition-colors">
+                      <Camera className="w-3 h-3" />
+                      {isCompressingPhoto ? 'Compressing...' : 'Camera'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={handlePhotoFileSelected}
+                        className="hidden"
+                      />
+                    </label>
+
+                    <label className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold transition-colors">
+                      <Upload className="w-3 h-3" /> Gallery
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handlePhotoFileSelected}
+                        className="hidden"
+                      />
+                    </label>
+
+                    {newMember.photoUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCompressedPhoto(null);
+                          setNewMember((prev) => ({ ...prev, photoUrl: '' }));
+                        }}
+                        className="text-[10px] font-semibold text-rose-400 hover:text-rose-300 px-1.5"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  {photoError && <p className="text-[10px] text-rose-400 mt-1">{photoError}</p>}
+                </div>
+              </div>
+
               <div>
                 <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                   Full Name
@@ -1582,9 +1687,12 @@ export default function GymDashboard({
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-cyan-400 text-[#060b0e] font-extrabold rounded-xl text-xs hover:bg-cyan-300"
+                  disabled={isSavingMember || isCompressingPhoto}
+                  className="flex-1 py-2.5 bg-cyan-400 text-[#060b0e] font-extrabold rounded-xl text-xs hover:bg-cyan-300 disabled:opacity-60"
                 >
-                  Save Member (₹{Number(newMember.planPrice).toLocaleString()})
+                  {isSavingMember
+                    ? 'Uploading & Saving...'
+                    : `Save Member (₹${Number(newMember.planPrice).toLocaleString()})`}
                 </button>
               </div>
             </form>

@@ -121,3 +121,43 @@ export const apiMarkMemberReminderSent = (gymId, memberId, milestone) =>
     method: 'PATCH',
     body: JSON.stringify({ milestone })
   });
+
+export const apiGetImageKitAuth = (gymId) =>
+  request(`/gyms/${gymId}/imagekit-auth`);
+
+export async function uploadMemberPhoto(gymId, compressed) {
+  try {
+    const auth = await apiGetImageKitAuth(gymId);
+    if (!auth?.configured) {
+      return { photoUrl: compressed.dataUrl, photoFileId: '', mode: 'INLINE_COMPRESSED' };
+    }
+
+    const form = new FormData();
+    form.append('file', compressed.blob, compressed.fileName);
+    form.append('fileName', compressed.fileName);
+    form.append('folder', '/gymcentric/members');
+    form.append('useUniqueFileName', 'true');
+    form.append('publicKey', auth.publicKey);
+    form.append('signature', auth.signature);
+    form.append('expire', String(auth.expire));
+    form.append('token', auth.token);
+
+    const res = await fetch('https://upload.imagekit.io/api/v1/files/upload', {
+      method: 'POST',
+      body: form
+    });
+    const data = await res.json();
+    if (!res.ok || !data?.url) {
+      throw new Error(data?.message || 'ImageKit upload failed');
+    }
+
+    return {
+      photoUrl: data.url,
+      photoFileId: data.fileId || '',
+      mode: 'IMAGEKIT'
+    };
+  } catch (err) {
+    console.warn('[Photo Upload Fallback]:', err.message);
+    return { photoUrl: compressed.dataUrl, photoFileId: '', mode: 'INLINE_COMPRESSED' };
+  }
+}
