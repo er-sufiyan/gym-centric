@@ -82,6 +82,8 @@ function serializeMember(m) {
     daysSinceInteraction,
     totalCheckIns: m.totalCheckIns || 0,
     isLeastInteract,
+    lastReminderMilestone: m.lastReminderMilestone || null,
+    lastReminderSentAt: m.lastReminderSentAt ? formatDisplayDate(m.lastReminderSentAt) : '',
     rank: m.rank || null
   };
 }
@@ -552,6 +554,8 @@ exports.toggleMemberStatus = async (req, res) => {
     if (member.status === 'ACTIVE') {
       member.lastInteractionDate = new Date();
       member.expiredAt = null;
+      member.lastReminderMilestone = null;
+      member.lastReminderSentAt = null;
       if (new Date(member.expiryDate) < new Date()) {
         member.expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
       }
@@ -635,6 +639,8 @@ exports.recordMemberPayment = async (req, res) => {
     const nextExpiry = new Date(Date.now() + Number(extendDays) * 24 * 60 * 60 * 1000);
     member.status = 'ACTIVE';
     member.expiredAt = null;
+    member.lastReminderMilestone = null;
+    member.lastReminderSentAt = null;
     member.planName = notes;
     member.planPrice = Number(amount);
     member.expiryDate = nextExpiry;
@@ -707,6 +713,32 @@ exports.updatePlatformSettings = async (req, res) => {
         supportWhatsApp: updated.supportWhatsApp || ''
       }
     });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * PATCH /api/dashboard/gyms/:gymId/members/:memberId/reminder
+ */
+exports.markMemberReminderSent = async (req, res) => {
+  try {
+    const { gymId, memberId } = req.params;
+    const milestone = String(req.body?.milestone || '').toUpperCase();
+    if (!['3D', '2D', '1D', 'EXPIRED'].includes(milestone)) {
+      return res.status(400).json({ success: false, message: 'Invalid reminder milestone' });
+    }
+
+    const member = await Member.findOneAndUpdate(
+      { _id: memberId, gymId },
+      { lastReminderMilestone: milestone, lastReminderSentAt: new Date() },
+      { new: true }
+    );
+    if (!member) {
+      return res.status(404).json({ success: false, message: 'Member not found' });
+    }
+
+    return res.status(200).json({ success: true, member: serializeMember(member) });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }

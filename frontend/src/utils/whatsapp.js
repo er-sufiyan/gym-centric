@@ -24,3 +24,54 @@ export function buildWhatsAppUrl(phone, text = '') {
   const base = `https://wa.me/${waPhone}`;
   return text ? `${base}?text=${encodeURIComponent(text)}` : base;
 }
+
+/**
+ * Compute automatic expiry/renewal WhatsApp reminder copy for a member
+ * when their plan is at 3 days, 2 days, 1 day, or expired.
+ */
+export function getMemberExpiryReminder(member, gymName = 'GymCentric') {
+  if (!member) return null;
+  const daysLeft = Number(member.daysLeft ?? 0);
+  const isExpired = member.status === 'EXPIRED' || daysLeft <= 0;
+
+  let milestone = null;
+  let badge = '';
+  let message = '';
+
+  if (isExpired) {
+    milestone = 'EXPIRED';
+    badge = 'Expired';
+    message = `Hi ${member.name}, your ${gymName} subscription has expired${
+      member.expiryDate ? ` (ended on ${member.expiryDate})` : ''
+    }. Please renew your subscription to continue gym access.`;
+  } else if (daysLeft === 1) {
+    milestone = '1D';
+    badge = '1 Day Left';
+    message = `Hi ${member.name}, your ${gymName} subscription ends in 1 day${
+      member.expiryDate ? ` (on ${member.expiryDate})` : ''
+    }. Please renew your subscription today.`;
+  } else if (daysLeft === 2) {
+    milestone = '2D';
+    badge = '2 Days Left';
+    message = `Hi ${member.name}, your ${gymName} subscription ends in 2 days${
+      member.expiryDate ? ` (on ${member.expiryDate})` : ''
+    }. Please renew your subscription soon.`;
+  } else if (daysLeft === 3) {
+    milestone = '3D';
+    badge = '3 Days Left';
+    message = `Hi ${member.name}, your ${gymName} subscription ends in 3 days${
+      member.expiryDate ? ` (on ${member.expiryDate})` : ''
+    }. Please renew your subscription to avoid interruption.`;
+  } else {
+    return null;
+  }
+
+  return {
+    milestone,
+    badge,
+    daysLeft,
+    message,
+    waUrl: buildWhatsAppUrl(member.phone, message),
+    alreadySent: member.lastReminderMilestone === milestone
+  };
+}

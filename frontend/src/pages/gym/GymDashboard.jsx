@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   Receipt,
   MessageCircle,
+  BellRing,
   X
 } from 'lucide-react';
 import SidebarLayout from '../../components/common/SidebarLayout';
@@ -30,15 +31,17 @@ import WhatsAppReceiptModal from '../../components/common/WhatsAppReceiptModal';
 import MonthlyResetBanner from '../../components/common/MonthlyResetBanner';
 import BroadcastMessageModal from '../../components/common/BroadcastMessageModal';
 import ConfirmDeleteModal from '../../components/common/ConfirmDeleteModal';
+import ExpiryRemindersModal from '../../components/common/ExpiryRemindersModal';
 import { getCurrentMonthSection } from '../../utils/billingCycle';
-import { buildWhatsAppUrl } from '../../utils/whatsapp';
+import { buildWhatsAppUrl, getMemberExpiryReminder } from '../../utils/whatsapp';
 import {
   apiCreateMember,
   apiToggleMemberStatus,
   apiDeleteMember,
   apiCreateGymPlan,
   apiDeleteGymPlan,
-  apiRecordMemberPayment
+  apiRecordMemberPayment,
+  apiMarkMemberReminderSent
 } from '../../services/api';
 
 export default function GymDashboard({
@@ -76,6 +79,7 @@ export default function GymDashboard({
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isOfferModalOpen, setIsOfferModalOpen] = useState(false);
+  const [isRemindersModalOpen, setIsRemindersModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
 
   const showToast = (msg) => {
@@ -144,6 +148,23 @@ export default function GymDashboard({
   const expiringCount = useMemo(
     () => activeMembers.filter((m) => m.daysLeft <= 3 && m.daysLeft >= 0).length,
     [activeMembers]
+  );
+
+  const dueReminders = useMemo(() => {
+    const order = { '1D': 1, '2D': 2, '3D': 3, EXPIRED: 4 };
+    return members
+      .map((member) => {
+        const info = getMemberExpiryReminder(member, gymProfile?.gymName || 'GymCentric');
+        if (!info) return null;
+        return { member, ...info };
+      })
+      .filter(Boolean)
+      .sort((a, b) => (order[a.milestone] || 9) - (order[b.milestone] || 9));
+  }, [members, gymProfile?.gymName]);
+
+  const unsentRemindersCount = useMemo(
+    () => dueReminders.filter((r) => !r.alreadySent).length,
+    [dueReminders]
   );
 
   const monthSection = useMemo(() => getCurrentMonthSection(ledgerEntries), [ledgerEntries]);
@@ -537,6 +558,25 @@ export default function GymDashboard({
     });
   };
 
+  const handleMarkReminderSent = async (member, milestone) => {
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.id === member.id ? { ...m, lastReminderMilestone: milestone } : m
+      )
+    );
+    showToast(`WhatsApp reminder opened for ${member.name} (${milestone}).`);
+    if (dbConnected && gymProfile?.id) {
+      try {
+        const res = await apiMarkMemberReminderSent(gymProfile.id, member.id, milestone);
+        if (res?.member) {
+          setMembers((prev) => prev.map((m) => (m.id === member.id ? res.member : m)));
+        }
+      } catch {
+        // local state already updated; ignore transient DB error on external link click
+      }
+    }
+  };
+
   const toggleMemberStatus = async (memberId) => {
     if (dbConnected) {
       try {
@@ -685,6 +725,31 @@ export default function GymDashboard({
                 </td>
                 <td className="py-3.5 px-6 text-right">
                   <div className="flex items-center justify-end gap-2">
+                    {(() => {
+                      const reminder = getMemberExpiryReminder(member, gymProfile?.gymName || 'GymCentric');
+                      if (!reminder?.waUrl) return null;
+                      return (
+                        <a
+                          href={reminder.waUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMarkReminderSent(member, reminder.milestone);
+                          }}
+                          className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors inline-flex items-center gap-1 ${
+                            reminder.alreadySent
+                              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/20'
+                              : 'bg-emerald-500 hover:bg-emerald-400 text-[#060b0e] font-extrabold'
+                          }`}
+                          title={reminder.message}
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          {reminder.alreadySent ? `Sent (${reminder.milestone})` : `Remind (${reminder.badge})`}
+                        </a>
+                      );
+                    })()}
+
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -891,6 +956,20 @@ export default function GymDashboard({
                 className="flex items-center gap-1.5 px-3 py-2 bg-[#0b1418] hover:bg-slate-900 border border-slate-800 text-slate-200 font-semibold rounded-xl text-xs transition-colors"
               >
                 <Camera className="w-4 h-4 text-cyan-400" /> Scan QR
+              </button>
+
+              <button
+                onClick={() => setIsRemindersModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-bold rounded-xl text-xs transition-colors"
+                title="Auto-written 3d / 2d / 1d / Expired WhatsApp reminders"
+              >
+                <BellRing className="w-3.5 h-3.5 text-emerald-400" />
+                Reminders
+                {dueReminders.length > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500 text-[#060b0e]">
+                    {unsentRemindersCount > 0 ? unsentRemindersCount : dueReminders.length}
+                  </span>
+                )}
               </button>
 
               <button
@@ -1616,6 +1695,13 @@ export default function GymDashboard({
         onClose={() => setReceiptToSend(null)}
         receipt={receiptToSend}
         onSent={(msg) => showToast(msg)}
+      />
+
+      <ExpiryRemindersModal
+        isOpen={isRemindersModalOpen}
+        onClose={() => setIsRemindersModalOpen(false)}
+        reminders={dueReminders}
+        onMarkSent={handleMarkReminderSent}
       />
     </SidebarLayout>
   );

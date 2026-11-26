@@ -115,3 +115,9 @@ export const apiDeleteGymPlan = (gymId, planId) =>
 
 export const apiRecordMemberPayment = (gymId, payload) =>
   request(`/gyms/${gymId}/payments`, { method: 'POST', body: JSON.stringify(payload) });
+
+export const apiMarkMemberReminderSent = (gymId, memberId, milestone) =>
+  request(`/gyms/${gymId}/members/${memberId}/reminder`, {
+    method: 'PATCH',
+    body: JSON.stringify({ milestone })
+  });

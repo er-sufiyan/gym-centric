@@ -61,6 +61,15 @@ const memberSchema = new mongoose.Schema(
       type: Date,
       default: null
     },
+    lastReminderMilestone: {
+      type: String,
+      enum: ['3D', '2D', '1D', 'EXPIRED', null],
+      default: null
+    },
+    lastReminderSentAt: {
+      type: Date,
+      default: null
+    },
     lastInteractionDate: {
       type: Date,
       default: Date.now

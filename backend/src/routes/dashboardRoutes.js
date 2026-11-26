@@ -14,7 +14,8 @@ const {
   deleteMember,
   createGymPlan,
   deleteGymPlan,
-  recordMemberPayment
+  recordMemberPayment,
+  markMemberReminderSent
 } = require('../controllers/dashboardController');
 const {
   protect,
@@ -42,5 +43,6 @@ router.delete('/gyms/:gymId/members/:memberId', protect, authorizeGymScope, dele
 router.post('/gyms/:gymId/plans', protect, authorizeGymScope, createGymPlan);
 router.delete('/gyms/:gymId/plans/:planId', protect, authorizeGymScope, deleteGymPlan);
 router.post('/gyms/:gymId/payments', protect, authorizeGymScope, recordMemberPayment);
+router.patch('/gyms/:gymId/members/:memberId/reminder', protect, authorizeGymScope, markMemberReminderSent);
 
 module.exports = router;

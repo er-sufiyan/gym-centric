@@ -82,13 +82,84 @@ class WhatsAppService {
   }
 
   /**
-   * Send Expiry Reminder to Gym Member
+   * Send Expiry / Renewal Reminder to Gym Member (3d, 2d, 1d, or Expired)
    */
-  async sendExpiryReminder(phone, memberName, daysLeft, gymName) {
+  async sendExpiryReminder(phone, memberName, daysLeft, gymName, milestone = null) {
     const formattedPhone = this.formatPhone(phone);
-    const text = `🔔 *Membership Expiry Reminder*\n\nHi ${memberName}, your gym membership at *${gymName}* will expire in *${daysLeft} days*. Please visit reception to renew your plan.`;
-    console.log(`[WhatsApp Reminder]: Sent to ${formattedPhone}`);
-    return { success: true };
+    if (!formattedPhone || formattedPhone.length < 10) {
+      return { success: false, mode: 'INVALID_PHONE' };
+    }
+
+    const resolvedMilestone =
+      milestone || (daysLeft <= 0 ? 'EXPIRED' : daysLeft === 1 ? '1D' : daysLeft === 2 ? '2D' : '3D');
+
+    let statusPhrase = `ends in ${daysLeft} days`;
+    let text = `🔔 *Membership Renewal Reminder*\n\nHi ${memberName}, your subscription at *${gymName}* ends in *${daysLeft} days*. Please renew your plan to avoid interruption.`;
+
+    if (resolvedMilestone === 'EXPIRED' || daysLeft <= 0) {
+      statusPhrase = 'has expired';
+      text = `⚠️ *Membership Expired*\n\nHi ${memberName}, your subscription at *${gymName}* has *expired*. Please renew your subscription to continue gym access.`;
+    } else if (resolvedMilestone === '1D' || daysLeft === 1) {
+      statusPhrase = 'ends in 1 day';
+      text = `⏳ *Membership Expiring Tomorrow*\n\nHi ${memberName}, your subscription at *${gymName}* ends in *1 day*. Please renew your subscription today.`;
+    } else if (resolvedMilestone === '2D' || daysLeft === 2) {
+      statusPhrase = 'ends in 2 days';
+      text = `🔔 *Membership Expiry Reminder*\n\nHi ${memberName}, your subscription at *${gymName}* ends in *2 days*. Please renew your subscription soon.`;
+    } else if (resolvedMilestone === '3D' || daysLeft === 3) {
+      statusPhrase = 'ends in 3 days';
+      text = `🔔 *Membership Expiry Reminder*\n\nHi ${memberName}, your subscription at *${gymName}* ends in *3 days*. Please renew your subscription to stay active.`;
+    }
+
+    console.log(`[WhatsApp Reminder - ${resolvedMilestone}]: To ${formattedPhone} (${memberName}) — ${statusPhrase}`);
+
+    if (process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID) {
+      try {
+        const url = `${process.env.WHATSAPP_API_URL || 'https://graph.facebook.com/v21.0'}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
+        const templateName = (process.env.WHATSAPP_REMINDER_TEMPLATE || '').trim();
+        const payload = templateName
+          ? {
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: formattedPhone,
+              type: 'template',
+              template: {
+                name: templateName,
+                language: { code: process.env.WHATSAPP_TEMPLATE_LANG || 'en_US' },
+                components: [
+                  {
+                    type: 'body',
+                    parameters: [
+                      { type: 'text', text: String(memberName || 'Member') },
+                      { type: 'text', text: String(gymName || 'Gym') },
+                      { type: 'text', text: statusPhrase }
+                    ]
+                  }
+                ]
+              }
+            }
+          : {
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: formattedPhone,
+              type: 'text',
+              text: { body: text }
+            };
+
+        await axios.post(url, payload, {
+          headers: {
+            Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        return { success: true, mode: 'API_DISPATCH', milestone: resolvedMilestone };
+      } catch (err) {
+        const metaError = err.response?.data?.error?.message || err.response?.data || err.message;
+        console.error('[WhatsApp Reminder API Error]:', metaError);
+        return { success: true, mode: 'CONSOLE_FALLBACK', error: String(metaError), milestone: resolvedMilestone };
+      }
+    }
+
+    return { success: true, mode: 'DEVELOPMENT_SIMULATION', milestone: resolvedMilestone };
   }
 }
 
