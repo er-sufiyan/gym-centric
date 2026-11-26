@@ -1,5 +1,6 @@
 const Gym = require('../models/Gym');
 const GymPlan = require('../models/GymPlan');
+const SaasPayment = require('../models/SaasPayment');
 const LoginAttempt = require('../models/LoginAttempt');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
@@ -366,6 +367,18 @@ exports.register = async (req, res) => {
       { gymId: gym._id, name: '1 Month Standard', price: 1200, durationDays: 30 },
       { gymId: gym._id, name: '3 Months Value Pack', price: 3200, durationDays: 90 }
     ]);
+
+    const initialPlanAmount = gym.saasPlan === 'PRO' ? 5000 : 3000;
+    await SaasPayment.create({
+      gymId: gym._id,
+      gymName: gym.gymName,
+      ownerName: gym.ownerName,
+      invoiceNo: `INV-${Math.floor(1000 + Math.random() * 9000)}`,
+      amount: initialPlanAmount,
+      mode: 'UPI',
+      notes: `New ${gym.saasPlan} Onboarding (1 MONTH)`,
+      paymentDate: new Date()
+    });
 
     const delivery = await dispatchOtpToGym(gym, otp);
 

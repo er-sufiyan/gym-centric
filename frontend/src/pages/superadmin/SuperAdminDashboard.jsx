@@ -24,7 +24,6 @@ import TrendChart from '../../components/common/TrendChart';
 import PlanModal from '../../components/common/PlanModal';
 import WhatsAppReceiptModal from '../../components/common/WhatsAppReceiptModal';
 import GymOwnerDetailModal from '../../components/common/GymOwnerDetailModal';
-import MonthlyResetBanner from '../../components/common/MonthlyResetBanner';
 import BroadcastMessageModal from '../../components/common/BroadcastMessageModal';
 import ConfirmDeleteModal from '../../components/common/ConfirmDeleteModal';
 import { getOneYearHistory } from '../../utils/billingCycle';
@@ -804,7 +803,13 @@ export default function SuperAdminDashboard({
             </button>
 
             <button
-              onClick={() => setIsManualPayOpen(true)}
+              onClick={() => {
+                setManualEntry((prev) => ({
+                  ...prev,
+                  gymId: gyms.some((g) => g.id === prev.gymId) ? prev.gymId : gyms[0]?.id || ''
+                }));
+                setIsManualPayOpen(true);
+              }}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-cyan-400 hover:bg-cyan-300 text-[#060b0e] font-extrabold rounded-xl text-xs transition-colors shadow-lg shadow-cyan-500/15"
             >
               <PlusCircle className="w-4 h-4" /> Record SaaS Payment
@@ -1056,16 +1061,16 @@ export default function SuperAdminDashboard({
           </div>
         )}
 
-        {/* SAAS BILLING LEDGER (1-YEAR HISTORY) */}
+        {/* SAAS BILLING LEDGER */}
         {activeTab === 'billing' && (
           <div className="glass-card rounded-2xl p-6 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-800/80">
               <div>
                 <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-cyan-400">
-                  Separate Platform Billing • 1-Year Retention
+                  Platform Billing
                 </p>
                 <h3 className="text-sm font-bold text-white mt-0.5">
-                  SaaS Payment Transactions (Last 1 Year)
+                  SaaS Billing
                 </h3>
               </div>
               <div className="flex items-center gap-2 text-xs font-bold">
@@ -1078,11 +1083,9 @@ export default function SuperAdminDashboard({
               </div>
             </div>
 
-            <MonthlyResetBanner variant="yearly" />
-
             {monthlySaasPayments.length === 0 ? (
               <div className="text-center py-10 text-xs text-slate-500">
-                No SaaS payment transactions in the last 1 year.
+                No SaaS billing transactions yet.
               </div>
             ) : (
               <div className="space-y-2">

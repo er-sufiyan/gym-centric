@@ -14,7 +14,6 @@ import {
   Trash2
 } from 'lucide-react';
 import { getOneYearHistory } from '../../utils/billingCycle';
-import MonthlyResetBanner from './MonthlyResetBanner';
 
 export default function GymOwnerDetailModal({
   isOpen,
@@ -167,13 +166,11 @@ export default function GymOwnerDetailModal({
             </div>
           </div>
 
-          <MonthlyResetBanner variant="yearly" />
-
-          {/* SaaS Plan Payment History (1 Year Only) */}
+          {/* SaaS Plan Payment History */}
           <div className="rounded-2xl bg-[#060b0e] border border-slate-800/90 overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-800/80 flex items-center justify-between">
               <p className="text-xs font-bold text-white flex items-center gap-1.5">
-                <Receipt className="w-4 h-4 text-cyan-400" /> Payment History (Last 1 Year Only)
+                <Receipt className="w-4 h-4 text-cyan-400" /> Payment History
               </p>
               <span className="text-[11px] text-slate-400">{gymPayments.length} Invoices</span>
             </div>
