@@ -55,6 +55,7 @@ export default function App() {
   const [activeGymId, setActiveGymId] = useState(INITIAL_GYMS[0].id);
   const [plansByGym, setPlansByGym] = useState(INITIAL_PLANS_BY_GYM);
   const [membersByGym, setMembersByGym] = useState(INITIAL_MEMBERS_BY_GYM);
+  const [memberStatsByGym, setMemberStatsByGym] = useState({});
   const [memberPaymentsByGym, setMemberPaymentsByGym] = useState(INITIAL_MEMBER_PAYMENTS_BY_GYM);
   const [gymLedgerByGym, setGymLedgerByGym] = useState(INITIAL_MEMBER_PAYMENTS_BY_GYM);
   const [saasPayments, setSaasPayments] = useState(INITIAL_SAAS_PAYMENTS);
@@ -76,6 +77,7 @@ export default function App() {
         gyms: dbGyms,
         plansByGym: dbPlans,
         membersByGym: dbMembers,
+        memberStatsByGym: dbMemberStats,
         memberPaymentsByGym: dbPayments,
         gymLedgerByGym: dbLedger,
         saasPayments: dbSaas,
@@ -99,6 +101,7 @@ export default function App() {
         setActiveGymId((prevId) => (dbGyms.some((g) => g.id === prevId) ? prevId : dbGyms[0].id));
         setPlansByGym(dbPlans || {});
         setMembersByGym(dbMembers || {});
+        setMemberStatsByGym(dbMemberStats || {});
         setMemberPaymentsByGym(dbPayments || {});
         setGymLedgerByGym(dbLedger || dbPayments || {});
         setSaasPayments(dbSaas || []);
@@ -189,6 +192,10 @@ export default function App() {
   const handleAddGym = (newGym, initialPayment, initialPlans) => {
     setGyms((prev) => (prev.some((g) => g.id === newGym.id) ? prev : [newGym, ...prev]));
     setMembersByGym((prev) => ({ ...prev, [newGym.id]: prev[newGym.id] || [] }));
+    setMemberStatsByGym((prev) => ({
+      ...prev,
+      [newGym.id]: prev[newGym.id] || { active: 0, expiring: 0, blocked: 0, total: 0 }
+    }));
     setPlansByGym((prev) => ({
       ...prev,
       [newGym.id]:
@@ -215,6 +222,11 @@ export default function App() {
       return remaining;
     });
     setMembersByGym((prev) => {
+      const next = { ...prev };
+      delete next[gymId];
+      return next;
+    });
+    setMemberStatsByGym((prev) => {
       const next = { ...prev };
       delete next[gymId];
       return next;
@@ -357,6 +369,7 @@ export default function App() {
         activeGym={activeGym}
         onSelectGym={setActiveGymId}
         membersByGym={membersByGym}
+        memberStatsByGym={memberStatsByGym}
         saasPayments={saasPayments}
         setSaasPayments={setSaasPayments}
         onAddGym={handleAddGym}

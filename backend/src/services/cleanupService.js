@@ -1,4 +1,5 @@
 const cron = require('node-cron');
+const Member = require('../models/Member');
 const Payment = require('../models/Payment');
 const SaasPayment = require('../models/SaasPayment');
 const GymLedgerEntry = require('../models/GymLedgerEntry');
@@ -17,23 +18,60 @@ async function runRetentionCleanup() {
     const oneYearAgo = new Date(now);
     oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
 
+    const threeMonthsAgo = new Date(now);
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+
     const startOfCurrentMonth = getStartOfMonthDate(now);
 
-    const [deletedMemberPayments, deletedSaasPayments, deletedLedger] = await Promise.all([
+    // Sync any members whose expiryDate has already passed to EXPIRED
+    await Member.updateMany(
+      { status: 'ACTIVE', expiryDate: { $lt: now } },
+      { $set: { status: 'EXPIRED' } }
+    );
+
+    // Find expired members who have not renewed for 3+ months
+    const expiredMembersToPurge = await Member.find({
+      $or: [
+        { expiryDate: { $lt: threeMonthsAgo } },
+        { status: 'EXPIRED', expiredAt: { $ne: null, $lt: threeMonthsAgo } }
+      ]
+    }).select('_id');
+
+    const expiredMemberIds = expiredMembersToPurge.map((m) => m._id);
+
+    const [
+      deletedMemberPayments,
+      deletedSaasPayments,
+      deletedLedger,
+      deletedExpiredMembers,
+      deletedExpiredPayments,
+      deletedExpiredLedger
+    ] = await Promise.all([
       Payment.deleteMany({ paymentDate: { $lt: oneYearAgo } }),
       SaasPayment.deleteMany({ paymentDate: { $lt: oneYearAgo } }),
-      GymLedgerEntry.deleteMany({ paymentDate: { $lt: startOfCurrentMonth } })
+      GymLedgerEntry.deleteMany({ paymentDate: { $lt: startOfCurrentMonth } }),
+      expiredMemberIds.length > 0
+        ? Member.deleteMany({ _id: { $in: expiredMemberIds } })
+        : Promise.resolve({ deletedCount: 0 }),
+      expiredMemberIds.length > 0
+        ? Payment.deleteMany({ memberId: { $in: expiredMemberIds } })
+        : Promise.resolve({ deletedCount: 0 }),
+      expiredMemberIds.length > 0
+        ? GymLedgerEntry.deleteMany({ memberId: { $in: expiredMemberIds } })
+        : Promise.resolve({ deletedCount: 0 })
     ]);
 
     if (
       deletedMemberPayments.deletedCount ||
       deletedSaasPayments.deletedCount ||
-      deletedLedger.deletedCount
+      deletedLedger.deletedCount ||
+      deletedExpiredMembers.deletedCount
     ) {
       console.log(
         `[Retention Cleanup] Removed: ${deletedMemberPayments.deletedCount} member payments (>1yr), ` +
           `${deletedSaasPayments.deletedCount} SaaS payments (>1yr), ` +
-          `${deletedLedger.deletedCount} monthly ledger entries (previous month)`
+          `${deletedLedger.deletedCount} monthly ledger entries (previous month), ` +
+          `${deletedExpiredMembers.deletedCount} unrenewed expired members (>3mo, +${deletedExpiredPayments.deletedCount} payments, +${deletedExpiredLedger.deletedCount} ledger)`
       );
     }
   } catch (err) {

@@ -141,6 +141,7 @@ exports.getBootstrapData = async (req, res) => {
           gyms: [],
           plansByGym: {},
           membersByGym: {},
+          memberStatsByGym: {},
           memberPaymentsByGym: {},
           gymLedgerByGym: {},
           saasPayments: [],
@@ -161,22 +162,30 @@ exports.getBootstrapData = async (req, res) => {
 
     const [gymDocs, planDocs, memberDocs, paymentDocs, ledgerDocs, saasDocs] = await Promise.all([
       Gym.find(gymFilter).sort({ createdAt: 1 }),
-      GymPlan.find(scopedFilter).sort({ createdAt: 1 }),
-      Member.find(scopedFilter).sort({ createdAt: -1 }),
-      Payment.find({ ...scopedFilter, paymentDate: { $gte: oneYearAgo } }).sort({ paymentDate: -1 }),
-      GymLedgerEntry.find({ ...scopedFilter, paymentDate: { $gte: startOfMonth } }).sort({ paymentDate: -1 }),
+      isSuperAdmin ? Promise.resolve([]) : GymPlan.find(scopedFilter).sort({ createdAt: 1 }),
+      isSuperAdmin
+        ? Member.find({}).select('gymId status expiryDate')
+        : Member.find(scopedFilter).sort({ createdAt: -1 }),
+      isSuperAdmin
+        ? Promise.resolve([])
+        : Payment.find({ ...scopedFilter, paymentDate: { $gte: oneYearAgo } }).sort({ paymentDate: -1 }),
+      isSuperAdmin
+        ? Promise.resolve([])
+        : GymLedgerEntry.find({ ...scopedFilter, paymentDate: { $gte: startOfMonth } }).sort({ paymentDate: -1 }),
       isSuperAdmin ? SaasPayment.find({ paymentDate: { $gte: oneYearAgo } }).sort({ paymentDate: -1 }) : Promise.resolve([])
     ]);
 
     const gyms = gymDocs.map(serializeGym);
     const plansByGym = {};
     const membersByGym = {};
+    const memberStatsByGym = {};
     const memberPaymentsByGym = {};
     const gymLedgerByGym = {};
 
     gyms.forEach((g) => {
       plansByGym[g.id] = [];
       membersByGym[g.id] = [];
+      memberStatsByGym[g.id] = { active: 0, expiring: 0, blocked: 0, total: 0 };
       memberPaymentsByGym[g.id] = [];
       gymLedgerByGym[g.id] = [];
     });
@@ -189,8 +198,27 @@ exports.getBootstrapData = async (req, res) => {
 
     memberDocs.forEach((m) => {
       const gId = String(m.gymId);
-      if (!membersByGym[gId]) membersByGym[gId] = [];
-      membersByGym[gId].push(serializeMember(m));
+      if (!memberStatsByGym[gId]) {
+        memberStatsByGym[gId] = { active: 0, expiring: 0, blocked: 0, total: 0 };
+      }
+
+      const daysLeft = calcDaysLeft(m.expiryDate);
+      const isExpiredOrBlocked = m.status === 'EXPIRED' || daysLeft <= 0;
+      memberStatsByGym[gId].total += 1;
+      if (isExpiredOrBlocked) {
+        memberStatsByGym[gId].blocked += 1;
+      } else {
+        memberStatsByGym[gId].active += 1;
+        if (daysLeft <= 7) {
+          memberStatsByGym[gId].expiring += 1;
+        }
+      }
+
+      // Never expose individual member details to Super Admin
+      if (!isSuperAdmin) {
+        if (!membersByGym[gId]) membersByGym[gId] = [];
+        membersByGym[gId].push(serializeMember(m));
+      }
     });
 
     paymentDocs.forEach((p) => {
@@ -213,6 +241,7 @@ exports.getBootstrapData = async (req, res) => {
         gyms,
         plansByGym,
         membersByGym,
+        memberStatsByGym,
         memberPaymentsByGym,
         gymLedgerByGym,
         saasPayments,
@@ -522,9 +551,12 @@ exports.toggleMemberStatus = async (req, res) => {
     member.status = member.status === 'ACTIVE' ? 'EXPIRED' : 'ACTIVE';
     if (member.status === 'ACTIVE') {
       member.lastInteractionDate = new Date();
+      member.expiredAt = null;
       if (new Date(member.expiryDate) < new Date()) {
         member.expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
       }
+    } else {
+      member.expiredAt = new Date();
     }
     await member.save();
 
@@ -602,6 +634,7 @@ exports.recordMemberPayment = async (req, res) => {
     const now = new Date();
     const nextExpiry = new Date(Date.now() + Number(extendDays) * 24 * 60 * 60 * 1000);
     member.status = 'ACTIVE';
+    member.expiredAt = null;
     member.planName = notes;
     member.planPrice = Number(amount);
     member.expiryDate = nextExpiry;

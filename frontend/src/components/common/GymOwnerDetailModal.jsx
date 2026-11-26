@@ -20,7 +20,7 @@ export default function GymOwnerDetailModal({
   isOpen,
   onClose,
   gym,
-  members = [],
+  memberStats = { active: 0, expiring: 0, blocked: 0, total: 0 },
   saasPayments = [],
   onSendActivePlan,
   onSendInvoiceReceipt,
@@ -36,7 +36,10 @@ export default function GymOwnerDetailModal({
 
   if (!isOpen || !gym) return null;
 
-  const activeMemberCount = members.filter((m) => m.status === 'ACTIVE').length;
+  const activeMemberCount = memberStats?.active || 0;
+  const expiringMemberCount = memberStats?.expiring || 0;
+  const blockedMemberCount = memberStats?.blocked || 0;
+  const totalMemberCount = memberStats?.total || 0;
   const gymPayments = yearlyHistory.items;
   const totalPaid = yearlyHistory.totalAmount;
 
@@ -150,12 +153,15 @@ export default function GymOwnerDetailModal({
 
             <div className="p-3.5 rounded-2xl bg-[#060b0e] border border-slate-800/80">
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5 text-cyan-400" /> Members
+                <Users className="w-3.5 h-3.5 text-cyan-400" /> Members Report
               </p>
               <p className="text-sm font-extrabold text-white mt-1.5">
-                {activeMemberCount} Active <span className="text-xs font-normal text-slate-400">/ {members.length} Total</span>
+                {activeMemberCount} Active <span className="text-xs font-normal text-slate-400">/ {totalMemberCount} Total</span>
               </p>
               <p className="text-[11px] text-slate-400 mt-0.5">
+                {expiringMemberCount} Expiring • {blockedMemberCount} Blocked
+              </p>
+              <p className="text-[10px] text-slate-500 mt-0.5">
                 1-Year Paid: ₹{totalPaid.toLocaleString()}
               </p>
             </div>

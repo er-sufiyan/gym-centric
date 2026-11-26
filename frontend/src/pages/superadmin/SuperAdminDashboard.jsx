@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   LayoutGrid,
   Building2,
@@ -11,10 +11,8 @@ import {
   CheckCircle2,
   ShieldCheck,
   Receipt,
-  Eye,
   MapPin,
   Phone,
-  Clock,
   MessageCircle,
   Send,
   Trash2,
@@ -48,7 +46,8 @@ export default function SuperAdminDashboard({
   setGyms,
   activeGym,
   onSelectGym,
-  membersByGym,
+  membersByGym = {},
+  memberStatsByGym = {},
   saasPayments,
   setSaasPayments,
   onAddGym,
@@ -107,64 +106,90 @@ export default function SuperAdminDashboard({
     paymentMode: 'UPI'
   });
 
-  // Active-only sets (ONLY active gym owners & ONLY active members)
+  // Active-only sets & privacy-safe member counts (no individual member PII in Super Admin)
   const activeGyms = useMemo(() => gyms.filter((g) => g.status === 'ACTIVE'), [gyms]);
 
-  const totalActiveMembers = useMemo(() => {
-    return activeGyms.reduce((sum, g) => {
-      const activeInGym = (membersByGym[g.id] || []).filter((m) => m.status === 'ACTIVE').length;
-      return sum + activeInGym;
-    }, 0);
-  }, [activeGyms, membersByGym]);
+  const getGymMemberStats = useCallback(
+    (gymId) => {
+      const serverStats = memberStatsByGym?.[gymId];
+      if (serverStats) {
+        return {
+          active: Number(serverStats.active || 0),
+          expiring: Number(serverStats.expiring || 0),
+          blocked: Number(serverStats.blocked || 0),
+          total: Number(serverStats.total || 0)
+        };
+      }
+      const list = membersByGym?.[gymId] || [];
+      return list.reduce(
+        (acc, m) => {
+          const daysLeft = Number(m.daysLeft ?? 0);
+          const isBlockedOrExpired = m.status === 'EXPIRED' || daysLeft <= 0;
+          acc.total += 1;
+          if (isBlockedOrExpired) {
+            acc.blocked += 1;
+          } else {
+            acc.active += 1;
+            if (daysLeft <= 7) acc.expiring += 1;
+          }
+          return acc;
+        },
+        { active: 0, expiring: 0, blocked: 0, total: 0 }
+      );
+    },
+    [memberStatsByGym, membersByGym]
+  );
 
-  const activeMembersList = useMemo(() => {
+  const memberReportRows = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     const sourceGyms =
       selectedActiveGymId === 'ALL'
-        ? activeGyms
-        : activeGyms.filter((g) => g.id === selectedActiveGymId);
+        ? gyms
+        : gyms.filter((g) => g.id === selectedActiveGymId);
 
-    const rows = [];
-    sourceGyms.forEach((gym) => {
-      const gymMembers = (membersByGym[gym.id] || []).filter((m) => m.status === 'ACTIVE');
-      gymMembers.forEach((m) => {
-        const matches =
-          !q ||
-          m.name.toLowerCase().includes(q) ||
-          m.rollNo.toLowerCase().includes(q) ||
-          m.phone.toLowerCase().includes(q) ||
+    return sourceGyms
+      .filter((gym) => {
+        if (!q) return true;
+        return (
           gym.gymName.toLowerCase().includes(q) ||
-          gym.ownerName.toLowerCase().includes(q);
-        if (matches) {
-          rows.push({
-            ...m,
-            gymId: gym.id,
-            gymName: gym.gymName,
-            ownerName: gym.ownerName
-          });
-        }
-      });
-    });
-    return rows;
-  }, [activeGyms, membersByGym, selectedActiveGymId, searchQuery]);
+          gym.ownerName.toLowerCase().includes(q) ||
+          (gym.city || '').toLowerCase().includes(q)
+        );
+      })
+      .map((gym) => ({
+        gym,
+        stats: getGymMemberStats(gym.id)
+      }));
+  }, [gyms, selectedActiveGymId, searchQuery, getGymMemberStats]);
+
+  const memberReportTotals = useMemo(() => {
+    return memberReportRows.reduce(
+      (acc, row) => {
+        acc.active += row.stats.active;
+        acc.expiring += row.stats.expiring;
+        acc.blocked += row.stats.blocked;
+        acc.total += row.stats.total;
+        return acc;
+      },
+      { active: 0, expiring: 0, blocked: 0, total: 0 }
+    );
+  }, [memberReportRows]);
+
+  const totalActiveMembers = useMemo(() => {
+    return activeGyms.reduce((sum, g) => sum + getGymMemberStats(g.id).active, 0);
+  }, [activeGyms, getGymMemberStats]);
 
   const filteredActiveGyms = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return activeGyms;
-    return activeGyms.filter((g) => {
-      const gymMatch =
+    return activeGyms.filter(
+      (g) =>
         g.gymName.toLowerCase().includes(q) ||
         g.ownerName.toLowerCase().includes(q) ||
         g.phone.toLowerCase().includes(q) ||
-        (g.city || '').toLowerCase().includes(q);
-      const hasMatchingMember = (membersByGym[g.id] || []).some(
-        (m) =>
-          m.status === 'ACTIVE' &&
-          (m.name.toLowerCase().includes(q) || m.rollNo.toLowerCase().includes(q))
-      );
-      return gymMatch || hasMatchingMember;
-    });
-  }, [activeGyms, membersByGym, searchQuery]);
+        (g.city || '').toLowerCase().includes(q)
+    );
+  }, [activeGyms, searchQuery]);
 
   const yearlySaas = useMemo(() => getOneYearHistory(saasPayments), [saasPayments]);
   const monthlySaasPayments = yearlySaas.items;
@@ -505,11 +530,10 @@ export default function SuperAdminDashboard({
   };
 
   const openSendActivePlan = (gym, explicitActiveCount) => {
-    const gymMembers = membersByGym[gym.id] || [];
     const activeMembersCount =
       explicitActiveCount !== undefined
         ? explicitActiveCount
-        : gymMembers.filter((m) => m.status === 'ACTIVE').length;
+        : getGymMemberStats(gym.id).active;
 
     setReceiptToSend({
       type: 'SAAS_ACTIVE_PLAN',
@@ -529,7 +553,7 @@ export default function SuperAdminDashboard({
   const navItems = [
     { id: 'overview', label: 'Overview', icon: LayoutGrid },
     { id: 'active-owners', label: 'Active Owners', icon: Building2, count: activeGyms.length },
-    { id: 'active-members', label: 'Active Members', icon: Users, count: totalActiveMembers },
+    { id: 'active-members', label: 'Members Report', icon: Users, count: memberReportTotals.total },
     { id: 'tenants', label: 'Tenant Registry', icon: ShieldCheck, count: gyms.length },
     { id: 'billing', label: 'SaaS Billing', icon: Receipt, count: monthlySaasPayments.length }
   ];
@@ -559,7 +583,8 @@ export default function SuperAdminDashboard({
           <div className="text-center py-10 text-xs text-slate-500">No active gym owners match your search.</div>
         ) : (
           filteredActiveGyms.map((gym) => {
-            const activeMemCount = (membersByGym[gym.id] || []).filter((m) => m.status === 'ACTIVE').length;
+            const gymStats = getGymMemberStats(gym.id);
+            const activeMemCount = gymStats.active;
             const isSelected = selectedActiveGymId === gym.id;
 
             return (
@@ -616,83 +641,82 @@ export default function SuperAdminDashboard({
     </div>
   );
 
-  const renderActiveMembersTable = () => (
+  const renderMembersReportTable = () => (
     <div className="glass-card rounded-2xl overflow-hidden flex flex-col">
       <div className="px-6 py-4 border-b border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
-          <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-cyan-400">Active Members Only</p>
+          <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-cyan-400">
+            Privacy-Protected Counts Only
+          </p>
           <h3 className="text-sm font-bold text-white mt-0.5 flex items-center gap-2">
-            Members Directory
+            Members Report
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300">
-              {activeMembersList.length} ACTIVE
+              {memberReportTotals.total} TOTAL
             </span>
           </h3>
         </div>
 
         <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-400 bg-[#060b0e] px-3 py-1.5 rounded-lg border border-slate-800">
-          <Eye className="w-3.5 h-3.5 text-cyan-400" /> Read-only • Managed by Gym Owner
+          <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" /> Member details private • Auto-purge expired &gt;3mo
         </span>
       </div>
 
+      {/* Aggregate Counts Strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 border-b border-slate-800/70 bg-[#060b0e]/50">
+        <div className="p-3 rounded-xl bg-[#0b1418] border border-cyan-500/20">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Active Members</p>
+          <p className="text-xl font-extrabold text-cyan-300 mt-1">{memberReportTotals.active}</p>
+        </div>
+        <div className="p-3 rounded-xl bg-[#0b1418] border border-amber-500/20">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Expiring (≤7d)</p>
+          <p className="text-xl font-extrabold text-amber-300 mt-1">{memberReportTotals.expiring}</p>
+        </div>
+        <div className="p-3 rounded-xl bg-[#0b1418] border border-rose-500/20">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Blocked / Expired</p>
+          <p className="text-xl font-extrabold text-rose-400 mt-1">{memberReportTotals.blocked}</p>
+        </div>
+        <div className="p-3 rounded-xl bg-[#0b1418] border border-slate-700/80">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Members</p>
+          <p className="text-xl font-extrabold text-white mt-1">{memberReportTotals.total}</p>
+        </div>
+      </div>
+
       <div className="overflow-x-auto flex-1">
-        {activeMembersList.length === 0 ? (
+        {memberReportRows.length === 0 ? (
           <div className="text-center py-14 px-4 text-xs text-slate-500">
-            No active members found for the current filter.
+            No gyms match your filter.
           </div>
         ) : (
           <table className="w-full text-left text-xs">
             <thead className="bg-[#060b0e]/70 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800/80">
               <tr>
-                <th className="py-3 px-5">Active Member</th>
-                <th className="py-3 px-4">Gym Owner / Brand</th>
-                <th className="py-3 px-4">Shift</th>
-                <th className="py-3 px-4">Plan &amp; Validity</th>
-                <th className="py-3 px-5 text-right">Status</th>
+                <th className="py-3 px-5">Gym &amp; Owner</th>
+                <th className="py-3 px-4 text-right">Active</th>
+                <th className="py-3 px-4 text-right">Expiring</th>
+                <th className="py-3 px-4 text-right">Blocked / Expired</th>
+                <th className="py-3 px-5 text-right">Total Members</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
-              {activeMembersList.map((m) => (
-                <tr key={m.id} className="hover:bg-white/[0.02] transition-colors">
-                  <td className="py-3 px-5">
+              {memberReportRows.map(({ gym, stats }) => (
+                <tr key={gym.id} className="hover:bg-white/[0.02] transition-colors">
+                  <td className="py-3.5 px-5">
                     <div className="flex items-center gap-2.5">
-                      <img
-                        src={m.photoUrl}
-                        alt={m.name}
-                        className="w-8 h-8 rounded-lg object-cover border border-slate-700"
-                      />
+                      <div className="w-8 h-8 rounded-lg bg-slate-800/80 border border-slate-700 flex items-center justify-center font-bold text-[11px] text-cyan-300 flex-shrink-0">
+                        {gym.logoInitial}
+                      </div>
                       <div>
-                        <p className="font-bold text-white text-xs">
-                          {m.name}
-                          <span className="text-[10px] font-bold text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded ml-1.5">
-                            #{m.rollNo}
-                          </span>
+                        <p className="font-bold text-white text-xs">{gym.gymName}</p>
+                        <p className="text-[10px] text-slate-500">
+                          {gym.ownerName} • {gym.status}
                         </p>
-                        <p className="text-[11px] text-slate-500">{m.phone}</p>
                       </div>
                     </div>
                   </td>
-                  <td className="py-3 px-4">
-                    <p className="font-semibold text-slate-200">{m.gymName}</p>
-                    <p className="text-[10px] text-slate-500">{m.ownerName}</p>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-300 bg-[#060b0e] px-2 py-1 rounded-md border border-slate-800">
-                      <Clock className="w-3 h-3 text-cyan-400" />
-                      {m.shift}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <p className="font-semibold text-white">{m.planName}</p>
-                    <p className="text-[10px] text-slate-500">
-                      Until {m.expiryDate} ({m.daysLeft}d left)
-                    </p>
-                  </td>
-                  <td className="py-3 px-5 text-right">
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/15 text-cyan-300">
-                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
-                      ACTIVE
-                    </span>
-                  </td>
+                  <td className="py-3.5 px-4 text-right font-extrabold text-cyan-300">{stats.active}</td>
+                  <td className="py-3.5 px-4 text-right font-extrabold text-amber-300">{stats.expiring}</td>
+                  <td className="py-3.5 px-4 text-right font-extrabold text-rose-400">{stats.blocked}</td>
+                  <td className="py-3.5 px-5 text-right font-extrabold text-white">{stats.total}</td>
                 </tr>
               ))}
             </tbody>
@@ -717,7 +741,7 @@ export default function SuperAdminDashboard({
       onSelectGym={onSelectGym}
       searchQuery={searchQuery}
       setSearchQuery={setSearchQuery}
-      searchPlaceholder="Search active gym owners or active members..."
+      searchPlaceholder="Search gym owners, brands, or phone..."
       userProfile={{ initial: 'SA', name: 'Platform Super Admin', role: 'Administrator' }}
       dbConnected={dbConnected}
       onOpenLogin={onOpenLogin}
@@ -802,7 +826,7 @@ export default function SuperAdminDashboard({
               <StatCard
                 title="Active Members"
                 value={totalActiveMembers}
-                subtext="Across active gyms only"
+                subtext={`${memberReportTotals.expiring} expiring • ${memberReportTotals.blocked} blocked • ${memberReportTotals.total} total`}
                 icon={Users}
                 color="emerald"
               />
@@ -832,7 +856,7 @@ export default function SuperAdminDashboard({
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               <div className="lg:col-span-5">{renderActiveOwnersCards()}</div>
-              <div className="lg:col-span-7">{renderActiveMembersTable()}</div>
+              <div className="lg:col-span-7">{renderMembersReportTable()}</div>
             </div>
           </>
         )}
@@ -841,12 +865,12 @@ export default function SuperAdminDashboard({
         {activeTab === 'active-owners' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-5">{renderActiveOwnersCards()}</div>
-            <div className="lg:col-span-7">{renderActiveMembersTable()}</div>
+            <div className="lg:col-span-7">{renderMembersReportTable()}</div>
           </div>
         )}
 
-        {/* ACTIVE MEMBERS TAB (ACTIVE ONLY) */}
-        {activeTab === 'active-members' && renderActiveMembersTable()}
+        {/* MEMBERS REPORT TAB (COUNTS ONLY) */}
+        {activeTab === 'active-members' && renderMembersReportTable()}
 
         {/* TENANT REGISTRY & LOCKOUTS (SEPARATE SUPER ADMIN CONTROL) */}
         {activeTab === 'tenants' && (
@@ -882,7 +906,7 @@ export default function SuperAdminDashboard({
                   <tr>
                     <th className="py-3 px-6">Gym &amp; Owner</th>
                     <th className="py-3 px-6">SaaS Plan</th>
-                    <th className="py-3 px-6">Members (Active / Total)</th>
+                    <th className="py-3 px-6">Members Report (Counts)</th>
                     <th className="py-3 px-6">Validity</th>
                     <th className="py-3 px-6">Status</th>
                     <th className="py-3 px-6 text-right">Actions</th>
@@ -890,8 +914,8 @@ export default function SuperAdminDashboard({
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
                   {filteredTenants.map((gym) => {
-                    const gymMembers = membersByGym[gym.id] || [];
-                    const activeCount = gymMembers.filter((m) => m.status === 'ACTIVE').length;
+                    const gymStats = getGymMemberStats(gym.id);
+                    const activeCount = gymStats.active;
                     return (
                       <tr
                         key={gym.id}
@@ -929,8 +953,16 @@ export default function SuperAdminDashboard({
                           </span>
                         </td>
                         <td className="py-3.5 px-6">
-                          <span className="font-bold text-cyan-300">{activeCount} Active</span>
-                          <span className="text-slate-500 ml-1">/ {gymMembers.length} Total</span>
+                          <div className="space-y-0.5">
+                            <p className="font-bold text-white">
+                              <span className="text-cyan-300">{gymStats.active} Active</span>
+                              <span className="text-slate-500"> / {gymStats.total} Total</span>
+                            </p>
+                            <p className="text-[10px] text-slate-400">
+                              <span className="text-amber-300">{gymStats.expiring} Expiring</span> •{' '}
+                              <span className="text-rose-400">{gymStats.blocked} Blocked</span>
+                            </p>
+                          </div>
                         </td>
                         <td className="py-3.5 px-6">
                           <p className="font-semibold text-white">{gym.validUntil}</p>
@@ -1400,7 +1432,7 @@ export default function SuperAdminDashboard({
         isOpen={!!selectedDetailGym}
         onClose={() => setSelectedDetailGym(null)}
         gym={selectedDetailGym}
-        members={selectedDetailGym ? membersByGym[selectedDetailGym.id] || [] : []}
+        memberStats={selectedDetailGym ? getGymMemberStats(selectedDetailGym.id) : undefined}
         saasPayments={saasPayments}
         onSendActivePlan={openSendActivePlan}
         onSendInvoiceReceipt={(p, gym) => {
@@ -1645,7 +1677,7 @@ export default function SuperAdminDashboard({
         isOpen={!!gymToDelete}
         onClose={() => setGymToDelete(null)}
         title={`Delete ${gymToDelete?.gymName || 'Blocked Gym'}`}
-        message={`Are you sure you want to permanently delete ${gymToDelete?.gymName} (${gymToDelete?.ownerName})? This will permanently erase the gym, all ${(membersByGym[gymToDelete?.id] || []).length} members, all membership plans, payments, ledger entries, and SaaS billing history from both this site and the database.`}
+        message={`Are you sure you want to permanently delete ${gymToDelete?.gymName} (${gymToDelete?.ownerName})? This will permanently erase the gym, all ${getGymMemberStats(gymToDelete?.id).total} members, all membership plans, payments, ledger entries, and SaaS billing history from both this site and the database.`}
         confirmLabel="Delete Gym & All Data"
         onConfirm={async () => {
           if (!gymToDelete) return;

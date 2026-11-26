@@ -57,6 +57,10 @@ const memberSchema = new mongoose.Schema(
       enum: ['ACTIVE', 'EXPIRED'],
       default: 'ACTIVE'
     },
+    expiredAt: {
+      type: Date,
+      default: null
+    },
     lastInteractionDate: {
       type: Date,
       default: Date.now
@@ -78,7 +82,7 @@ const memberSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Members are retained permanently until explicitly deleted by the Gym Owner
+// Expired members not renewed within 3 months are automatically purged by cleanupService
 memberSchema.index({ gymId: 1, rollNo: 1 }, { unique: true });
 
 module.exports = mongoose.model('Member', memberSchema);
