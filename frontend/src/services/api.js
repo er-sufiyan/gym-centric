@@ -125,6 +125,12 @@ export const apiMarkMemberReminderSent = (gymId, memberId, milestone) =>
 export const apiGetImageKitAuth = (gymId) =>
   request(`/gyms/${gymId}/imagekit-auth`);
 
+export const apiMemberCheckIn = (gymId, payload) =>
+  request(`/gyms/${gymId}/check-in`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+
 export async function uploadMemberPhoto(gymId, compressed) {
   try {
     const auth = await apiGetImageKitAuth(gymId);

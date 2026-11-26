@@ -44,7 +44,8 @@ import {
   apiDeleteGymPlan,
   apiRecordMemberPayment,
   apiMarkMemberReminderSent,
-  uploadMemberPhoto
+  uploadMemberPhoto,
+  apiMemberCheckIn
 } from '../../services/api';
 
 export default function GymDashboard({
@@ -626,6 +627,30 @@ export default function GymDashboard({
       date: payment.date,
       validUntil: matchedMember?.expiryDate
     });
+  };
+
+  const handleMemberCheckIn = async (member, qrCode) => {
+    if (!member) return null;
+    if (dbConnected && gymProfile?.id) {
+      const res = await apiMemberCheckIn(gymProfile.id, {
+        memberId: member.id,
+        qrCode,
+        rollNo: member.rollNo
+      });
+      if (res?.member) {
+        setMembers((prev) => prev.map((m) => (m.id === member.id ? res.member : m)));
+        return res;
+      }
+    }
+
+    const isExpired = member.status === 'EXPIRED' || Number(member.daysLeft ?? 0) <= 0;
+    const updatedMember = isExpired
+      ? member
+      : { ...member, totalCheckIns: (member.totalCheckIns || 0) + 1 };
+    if (!isExpired) {
+      setMembers((prev) => prev.map((m) => (m.id === member.id ? updatedMember : m)));
+    }
+    return { access: isExpired ? 'DENIED' : 'GRANTED', member: updatedMember };
   };
 
   const handleMarkReminderSent = async (member, milestone) => {
@@ -1818,7 +1843,8 @@ export default function GymDashboard({
       <InAppQrScanner
         isOpen={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
-        members={activeMembers}
+        members={members}
+        onCheckIn={handleMemberCheckIn}
       />
 
       <MemberDetailModal

@@ -85,6 +85,7 @@ function serializeMember(m) {
     isLeastInteract,
     lastReminderMilestone: m.lastReminderMilestone || null,
     lastReminderSentAt: m.lastReminderSentAt ? formatDisplayDate(m.lastReminderSentAt) : '',
+    uniqueQrCode: m.uniqueQrCode || `GYM-${String(m.gymId).slice(-4)}-${m.rollNo}`,
     rank: m.rank || null
   };
 }
@@ -785,6 +786,57 @@ exports.getImageKitAuth = async (req, res) => {
   try {
     const auth = getUploadAuthParams();
     return res.status(200).json({ success: true, ...auth });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * POST /api/dashboard/gyms/:gymId/check-in
+ */
+exports.recordMemberCheckIn = async (req, res) => {
+  try {
+    const { gymId } = req.params;
+    const { qrCode = '', memberId = '', rollNo = '' } = req.body || {};
+
+    let member = null;
+    if (memberId) {
+      member = await Member.findOne({ _id: memberId, gymId });
+    }
+    if (!member && qrCode) {
+      member = await Member.findOne({ gymId, uniqueQrCode: String(qrCode).trim() });
+    }
+    if (!member && rollNo) {
+      member = await Member.findOne({ gymId, rollNo: String(rollNo).trim() });
+    }
+    if (!member) {
+      return res.status(404).json({ success: false, message: 'Member QR pass not found in this gym.' });
+    }
+
+    const daysLeft = calcDaysLeft(member.expiryDate);
+    const isExpired = member.status === 'EXPIRED' || daysLeft <= 0;
+
+    if (isExpired) {
+      if (member.status !== 'EXPIRED') {
+        member.status = 'EXPIRED';
+        await member.save();
+      }
+      return res.status(200).json({
+        success: true,
+        access: 'DENIED',
+        member: serializeMember(member)
+      });
+    }
+
+    member.totalCheckIns = (member.totalCheckIns || 0) + 1;
+    member.lastInteractionDate = new Date();
+    await member.save();
+
+    return res.status(200).json({
+      success: true,
+      access: 'GRANTED',
+      member: serializeMember(member)
+    });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }

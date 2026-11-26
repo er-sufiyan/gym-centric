@@ -1,12 +1,63 @@
-import React from 'react';
-import { X, Send, QrCode, Calendar, Clock, Award } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import QRCode from 'qrcode';
+import { X, Send, QrCode, Calendar, Clock, Download } from 'lucide-react';
+import { buildWhatsAppUrl } from '../../utils/whatsapp';
 
 export default function QrPassModal({ isOpen, onClose, member, gymProfile }) {
+  const [qrDataUrl, setQrDataUrl] = useState('');
+
+  const qrCodeValue = member
+    ? member.uniqueQrCode || `GYM-${String(gymProfile?.id || '').slice(-4)}-${member.rollNo}`
+    : '';
+
+  useEffect(() => {
+    let active = true;
+    if (!isOpen || !member || !qrCodeValue) {
+      setQrDataUrl('');
+      return;
+    }
+
+    QRCode.toDataURL(qrCodeValue, {
+      width: 240,
+      margin: 1,
+      color: {
+        dark: '#020617',
+        light: '#ffffff'
+      }
+    })
+      .then((url) => {
+        if (active) setQrDataUrl(url);
+      })
+      .catch(() => {
+        if (active) setQrDataUrl('');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isOpen, member?.id, qrCodeValue]);
+
   if (!isOpen || !member) return null;
+
+  const gymName = gymProfile?.gymName || 'GymCentric Gym';
+  const passMessage = [
+    `🎫 *${gymName} — Digital Membership Pass*`,
+    ``,
+    `👤 *Member:* ${member.name}`,
+    `🆔 *Member ID:* #${member.rollNo}`,
+    `🔑 *Pass Code:* ${qrCodeValue}`,
+    `⏰ *Shift:* ${member.shift} (${member.shiftTime || ''})`,
+    `📋 *Plan:* ${member.planName}`,
+    `✅ *Valid Until:* ${member.expiryDate}`,
+    ``,
+    `Show your pass ID #${member.rollNo} or QR code at gym check-in.`
+  ].join('\n');
+
+  const waUrl = buildWhatsAppUrl(member.phone, passMessage);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-sm max-h-[92vh] overflow-y-auto shadow-2xl">
         {/* Pass Top Bar */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-800 bg-slate-950/50">
           <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
@@ -21,9 +72,7 @@ export default function QrPassModal({ isOpen, onClose, member, gymProfile }) {
         <div className="p-6 text-center">
           {/* Gym Header */}
           <div className="pb-4 border-b border-slate-800/80">
-            <h4 className="text-base font-extrabold text-white uppercase tracking-wider">
-              {gymProfile?.gymName || 'Iron Temple Gym'}
-            </h4>
+            <h4 className="text-base font-extrabold text-white uppercase tracking-wider">{gymName}</h4>
             <p className="text-[10px] text-slate-400 mt-0.5">Verified Smart Pass • Powered by GymCentric</p>
           </div>
 
@@ -31,7 +80,10 @@ export default function QrPassModal({ isOpen, onClose, member, gymProfile }) {
           <div className="my-5 flex flex-col items-center">
             <div className="relative">
               <img
-                src={member.photoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&h=150&fit=crop&crop=faces'}
+                src={
+                  member.photoUrl ||
+                  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&h=150&fit=crop&crop=faces'
+                }
                 alt={member.name}
                 className="w-20 h-20 rounded-2xl object-cover border-2 border-emerald-500/50 shadow-lg"
               />
@@ -44,19 +96,17 @@ export default function QrPassModal({ isOpen, onClose, member, gymProfile }) {
             <p className="text-xs text-slate-400">{member.phone}</p>
           </div>
 
-          {/* QR Code Container */}
-          <div className="bg-white p-3.5 rounded-2xl inline-block shadow-inner mb-4">
-            {/* SVG Vector QR Code Graphic */}
-            <svg viewBox="0 0 100 100" className="w-32 h-32 fill-slate-950">
-              <path d="M0,0 h30 v30 h-30 z M5,5 v20 h20 v-20 z M10,10 h10 v10 h-10 z" />
-              <path d="M70,0 h30 v30 h-30 z M75,5 v20 h20 v-20 z M80,10 h10 v10 h-10 z" />
-              <path d="M0,70 h30 v30 h-30 z M5,75 v20 h20 v-20 z M10,80 h10 v10 h-10 z" />
-              <path d="M40,10 h10 v10 h-10 z M55,10 h5 v5 h-5 z M45,25 h15 v5 h-15 z" />
-              <path d="M40,40 h20 v20 h-20 z M45,45 h10 v10 h-10 z" />
-              <path d="M10,40 h15 v5 h-15 z M20,50 h10 v15 h-10 z M65,40 h10 v10 h-10 z M80,45 h15 v15 h-15 z" />
-              <path d="M40,70 h15 v10 h-15 z M60,75 h10 v20 h-10 z M75,80 h20 v15 h-20 z" />
-            </svg>
+          {/* Real Scannable QR Code */}
+          <div className="bg-white p-3 rounded-2xl inline-flex flex-col items-center shadow-inner mb-2">
+            {qrDataUrl ? (
+              <img src={qrDataUrl} alt={`QR Pass for ${member.name}`} className="w-36 h-36" />
+            ) : (
+              <div className="w-36 h-36 flex items-center justify-center text-xs text-slate-500">
+                Generating QR...
+              </div>
+            )}
           </div>
+          <p className="text-[10px] font-mono text-slate-400 mb-4 break-all">{qrCodeValue}</p>
 
           {/* Pass Details Pill */}
           <div className="grid grid-cols-2 gap-2 text-left bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs mb-4">
@@ -74,16 +124,38 @@ export default function QrPassModal({ isOpen, onClose, member, gymProfile }) {
             </div>
           </div>
 
-          {/* Action Button: Send WhatsApp */}
-          <button
-            onClick={() => {
-              alert(`Digital Pass sent to ${member.name} (${member.phone}) on WhatsApp!`);
-              onClose();
-            }}
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition-colors shadow-lg shadow-emerald-500/20"
-          >
-            <Send className="w-3.5 h-3.5" /> Send Pass to Member via WhatsApp
-          </button>
+          {/* Action Buttons */}
+          <div className="space-y-2">
+            {waUrl ? (
+              <a
+                href={waUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={onClose}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition-colors shadow-lg shadow-emerald-500/20"
+              >
+                <Send className="w-3.5 h-3.5" /> Send Pass to Member via WhatsApp
+              </a>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="w-full py-2.5 px-4 bg-slate-800 text-slate-400 font-bold rounded-xl text-xs cursor-not-allowed"
+              >
+                Invalid Member Phone Number
+              </button>
+            )}
+
+            {qrDataUrl && (
+              <a
+                href={qrDataUrl}
+                download={`member-${member.rollNo}-qr-pass.png`}
+                className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-200 font-semibold rounded-xl text-xs transition-colors"
+              >
+                <Download className="w-3.5 h-3.5 text-cyan-400" /> Download QR Image
+              </a>
+            )}
+          </div>
         </div>
       </div>
     </div>
