@@ -91,6 +91,8 @@ export default function GymDashboard({
   const [addMemberError, setAddMemberError] = useState('');
   const [toastMessage, setToastMessage] = useState('');
 
+  const isProPlan = (gymProfile?.saasPlan || 'PRO') === 'PRO';
+
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(''), 4000);
@@ -377,7 +379,7 @@ export default function GymDashboard({
         showToast(`Member "${res.member.name}" (#${res.member.rollNo}) saved successfully!`);
         if (sendWaReceiptOnAdd) {
           setReceiptToSend({
-            type: 'MEMBER_WELCOME',
+            type: isProPlan ? 'MEMBER_WELCOME' : 'MEMBER',
             receiptNo: res.payment.receiptNo,
             gymName: gymProfile?.gymName || 'GymCentric Gym',
             recipientName: res.member.name,
@@ -468,7 +470,7 @@ export default function GymDashboard({
     showToast(`${created.name} (#${created.rollNo}) registered as ACTIVE member!`);
     if (sendWaReceiptOnAdd) {
       setReceiptToSend({
-        type: 'MEMBER_WELCOME',
+        type: isProPlan ? 'MEMBER_WELCOME' : 'MEMBER',
         receiptNo,
         gymName: gymProfile?.gymName || 'GymCentric Gym',
         recipientName: created.name,
@@ -820,40 +822,43 @@ export default function GymDashboard({
                 </td>
                 <td className="py-3.5 px-6 text-right">
                   <div className="flex items-center justify-end gap-2">
-                    {(() => {
-                      const reminder = getMemberExpiryReminder(member, gymProfile?.gymName || 'GymCentric');
-                      if (!reminder?.waUrl) return null;
-                      return (
-                        <a
-                          href={reminder.waUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMarkReminderSent(member, reminder.milestone);
-                          }}
-                          className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors inline-flex items-center gap-1 ${
-                            reminder.alreadySent
-                              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/20'
-                              : 'bg-emerald-500 hover:bg-emerald-400 text-[#060b0e] font-extrabold'
-                          }`}
-                          title={reminder.message}
-                        >
-                          <MessageCircle className="w-3.5 h-3.5" />
-                          {reminder.alreadySent ? `Sent (${reminder.milestone})` : `Remind (${reminder.badge})`}
-                        </a>
-                      );
-                    })()}
+                    {isProPlan &&
+                      (() => {
+                        const reminder = getMemberExpiryReminder(member, gymProfile?.gymName || 'GymCentric');
+                        if (!reminder?.waUrl) return null;
+                        return (
+                          <a
+                            href={reminder.waUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleMarkReminderSent(member, reminder.milestone);
+                            }}
+                            className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors inline-flex items-center gap-1 ${
+                              reminder.alreadySent
+                                ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/20'
+                                : 'bg-emerald-500 hover:bg-emerald-400 text-[#060b0e] font-extrabold'
+                            }`}
+                            title={reminder.message}
+                          >
+                            <MessageCircle className="w-3.5 h-3.5" />
+                            {reminder.alreadySent ? `Sent (${reminder.milestone})` : `Remind (${reminder.badge})`}
+                          </a>
+                        );
+                      })()}
 
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedPassMember(member);
-                      }}
-                      className="px-2.5 py-1.5 bg-[#060b0e] hover:bg-slate-900 text-cyan-300 rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1 border border-slate-800"
-                    >
-                      <QrCode className="w-3.5 h-3.5" /> Pass
-                    </button>
+                    {isProPlan && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedPassMember(member);
+                        }}
+                        className="px-2.5 py-1.5 bg-[#060b0e] hover:bg-slate-900 text-cyan-300 rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1 border border-slate-800"
+                      >
+                        <QrCode className="w-3.5 h-3.5" /> Pass
+                      </button>
+                    )}
 
                     <button
                       onClick={(e) => {
@@ -1049,33 +1054,37 @@ export default function GymDashboard({
                 <CreditCard className="w-4 h-4 text-cyan-400" /> Record Fee
               </button>
 
-              <button
-                onClick={() => setIsScannerOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-[#0b1418] hover:bg-slate-900 border border-slate-800 text-slate-200 font-semibold rounded-xl text-xs transition-colors"
-              >
-                <Camera className="w-4 h-4 text-cyan-400" /> Scan QR
-              </button>
+              {isProPlan && (
+                <>
+                  <button
+                    onClick={() => setIsScannerOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-[#0b1418] hover:bg-slate-900 border border-slate-800 text-slate-200 font-semibold rounded-xl text-xs transition-colors"
+                  >
+                    <Camera className="w-4 h-4 text-cyan-400" /> Scan QR
+                  </button>
 
-              <button
-                onClick={() => setIsRemindersModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-bold rounded-xl text-xs transition-colors"
-                title="Auto-written 3d / 2d / 1d / Expired WhatsApp reminders"
-              >
-                <BellRing className="w-3.5 h-3.5 text-emerald-400" />
-                Reminders
-                {dueReminders.length > 0 && (
-                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500 text-[#060b0e]">
-                    {unsentRemindersCount > 0 ? unsentRemindersCount : dueReminders.length}
-                  </span>
-                )}
-              </button>
+                  <button
+                    onClick={() => setIsRemindersModalOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-bold rounded-xl text-xs transition-colors"
+                    title="Auto-written 3d / 2d / 1d / Expired WhatsApp reminders"
+                  >
+                    <BellRing className="w-3.5 h-3.5 text-emerald-400" />
+                    Reminders
+                    {dueReminders.length > 0 && (
+                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500 text-[#060b0e]">
+                        {unsentRemindersCount > 0 ? unsentRemindersCount : dueReminders.length}
+                      </span>
+                    )}
+                  </button>
 
-              <button
-                onClick={() => setIsOfferModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-[#0b1418] hover:bg-slate-900 border border-slate-800 text-slate-200 font-semibold rounded-xl text-xs transition-colors"
-              >
-                <Send className="w-3.5 h-3.5 text-cyan-400" /> Broadcast
-              </button>
+                  <button
+                    onClick={() => setIsOfferModalOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-[#0b1418] hover:bg-slate-900 border border-slate-800 text-slate-200 font-semibold rounded-xl text-xs transition-colors"
+                  >
+                    <Send className="w-3.5 h-3.5 text-cyan-400" /> Broadcast
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -1093,7 +1102,7 @@ export default function GymDashboard({
                 <StatCard
                   title="Expiring in 3 Days"
                   value={expiringCount}
-                  subtext="WhatsApp reminder ready"
+                  subtext={isProPlan ? 'WhatsApp reminder ready' : 'Renewals due within 3 days'}
                   icon={AlertTriangle}
                   color="amber"
                 />
@@ -1732,7 +1741,11 @@ export default function GymDashboard({
               <label className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-[#060b0e] border border-emerald-500/30 cursor-pointer">
                 <span className="flex items-center gap-2 text-xs text-slate-200 font-semibold">
                   <MessageCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                  <span>Send Welcome Greeting (Plan, Timing &amp; ID) via WhatsApp</span>
+                  <span>
+                    {isProPlan
+                      ? 'Send Welcome Greeting (Plan, Timing & ID) via WhatsApp'
+                      : 'Send Fee Payment Receipt via WhatsApp'}
+                  </span>
                 </span>
                 <input
                   type="checkbox"
@@ -1771,81 +1784,87 @@ export default function GymDashboard({
         </div>
       )}
 
-      <BroadcastMessageModal
-        isOpen={isOfferModalOpen}
-        onClose={() => setIsOfferModalOpen(false)}
-        title={`Send Message (${gymProfile?.gymName || 'Gym'})`}
-        subtitle="Choose whether to send to All, Active, Expired, or Remaining (expiring soon) members."
-        groups={[
-          {
-            id: 'ALL',
-            label: 'All',
-            hint: 'Every member',
-            recipients: members.map((m) => ({
-              id: m.id,
-              name: m.name,
-              phone: m.phone,
-              meta: `#${m.rollNo} • ${m.status}`
-            })),
-            defaultMessage: `Hello from ${gymProfile?.gymName}! Check out our latest fitness updates and membership offers.`
-          },
-          {
-            id: 'ACTIVE',
-            label: 'Active',
-            hint: 'Active plans',
-            recipients: activeMembers.map((m) => ({
-              id: m.id,
-              name: m.name,
-              phone: m.phone,
-              meta: `#${m.rollNo} • ${m.daysLeft}d left`
-            })),
-            defaultMessage: `Hi! Keep up the great consistency at ${gymProfile?.gymName}. Special active member offer: refer a friend and get 15 days free!`
-          },
-          {
-            id: 'EXPIRED',
-            label: 'Expired',
-            hint: 'Need renewal',
-            recipients: expiredMembers.map((m) => ({
-              id: m.id,
-              name: m.name,
-              phone: m.phone,
-              meta: `#${m.rollNo} • Expired`
-            })),
-            defaultMessage: `Hi! Your ${gymProfile?.gymName} membership has expired. Renew this week to restart your workouts with a special comeback discount!`
-          },
-          {
-            id: 'REMAINING',
-            label: 'Remaining',
-            hint: 'Expiring ≤ 7d',
-            recipients: activeMembers
-              .filter((m) => m.daysLeft >= 0 && m.daysLeft <= 7)
-              .map((m) => ({
+      {isProPlan && (
+        <BroadcastMessageModal
+          isOpen={isOfferModalOpen}
+          onClose={() => setIsOfferModalOpen(false)}
+          title={`Send Message (${gymProfile?.gymName || 'Gym'})`}
+          subtitle="Choose whether to send to All, Active, Expired, or Remaining (expiring soon) members."
+          groups={[
+            {
+              id: 'ALL',
+              label: 'All',
+              hint: 'Every member',
+              recipients: members.map((m) => ({
+                id: m.id,
+                name: m.name,
+                phone: m.phone,
+                meta: `#${m.rollNo} • ${m.status}`
+              })),
+              defaultMessage: `Hello from ${gymProfile?.gymName}! Check out our latest fitness updates and membership offers.`
+            },
+            {
+              id: 'ACTIVE',
+              label: 'Active',
+              hint: 'Active plans',
+              recipients: activeMembers.map((m) => ({
                 id: m.id,
                 name: m.name,
                 phone: m.phone,
                 meta: `#${m.rollNo} • ${m.daysLeft}d left`
               })),
-            defaultMessage: `Friendly reminder from ${gymProfile?.gymName}: your membership has only a few days remaining! Renew early to keep uninterrupted access.`
-          }
-        ]}
-        onDispatch={(grp) => {
-          showToast(`Message queued via WhatsApp for ${grp.recipients.length} ${grp.label} members!`);
-        }}
-      />
+              defaultMessage: `Hi! Keep up the great consistency at ${gymProfile?.gymName}. Special active member offer: refer a friend and get 15 days free!`
+            },
+            {
+              id: 'EXPIRED',
+              label: 'Expired',
+              hint: 'Need renewal',
+              recipients: expiredMembers.map((m) => ({
+                id: m.id,
+                name: m.name,
+                phone: m.phone,
+                meta: `#${m.rollNo} • Expired`
+              })),
+              defaultMessage: `Hi! Your ${gymProfile?.gymName} membership has expired. Renew this week to restart your workouts with a special comeback discount!`
+            },
+            {
+              id: 'REMAINING',
+              label: 'Remaining',
+              hint: 'Expiring ≤ 7d',
+              recipients: activeMembers
+                .filter((m) => m.daysLeft >= 0 && m.daysLeft <= 7)
+                .map((m) => ({
+                  id: m.id,
+                  name: m.name,
+                  phone: m.phone,
+                  meta: `#${m.rollNo} • ${m.daysLeft}d left`
+                })),
+              defaultMessage: `Friendly reminder from ${gymProfile?.gymName}: your membership has only a few days remaining! Renew early to keep uninterrupted access.`
+            }
+          ]}
+          onDispatch={(grp) => {
+            showToast(`Message queued via WhatsApp for ${grp.recipients.length} ${grp.label} members!`);
+          }}
+        />
+      )}
 
-      <QrPassModal
-        isOpen={!!selectedPassMember}
-        onClose={() => setSelectedPassMember(null)}
-        member={selectedPassMember}
-        gymProfile={gymProfile}
-      />
+      {isProPlan && (
+        <QrPassModal
+          isOpen={!!selectedPassMember}
+          onClose={() => setSelectedPassMember(null)}
+          member={selectedPassMember}
+          gymProfile={gymProfile}
+        />
+      )}
 
-      <InAppQrScanner
-        isOpen={isScannerOpen}
-        onClose={() => setIsScannerOpen(false)}
-        members={members}
-        onCheckIn={handleMemberCheckIn}
-      />
+      {isProPlan && (
+        <InAppQrScanner
+          isOpen={isScannerOpen}
+          onClose={() => setIsScannerOpen(false)}
+          members={members}
+          onCheckIn={handleMemberCheckIn}
+        />
+      )}
 
       <MemberDetailModal
         isOpen={!!selectedDetailMember}
@@ -1853,7 +1872,7 @@ export default function GymDashboard({
         member={selectedDetailMember}
         payments={payments}
         onRenew={openPayForMember}
-        onOpenPass={setSelectedPassMember}
+        onOpenPass={isProPlan ? setSelectedPassMember : undefined}
         onRemoveMember={(member) => setMemberToRemove(member)}
         onSendReceipt={(payment, member) => {
           setSelectedDetailMember(null);
@@ -1877,12 +1896,14 @@ export default function GymDashboard({
         onSent={(msg) => showToast(msg)}
       />
 
-      <ExpiryRemindersModal
-        isOpen={isRemindersModalOpen}
-        onClose={() => setIsRemindersModalOpen(false)}
-        reminders={dueReminders}
-        onMarkSent={handleMarkReminderSent}
-      />
+      {isProPlan && (
+        <ExpiryRemindersModal
+          isOpen={isRemindersModalOpen}
+          onClose={() => setIsRemindersModalOpen(false)}
+          reminders={dueReminders}
+          onMarkSent={handleMarkReminderSent}
+        />
+      )}
     </SidebarLayout>
   );
 }

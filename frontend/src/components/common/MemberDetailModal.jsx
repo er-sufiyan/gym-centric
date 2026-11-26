@@ -230,16 +230,18 @@ export default function MemberDetailModal({
 
         {/* Footer Actions */}
         <div className="px-6 py-4 border-t border-slate-800/80 bg-[#081014] flex flex-wrap items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => {
-              onClose();
-              onOpenPass(member);
-            }}
-            className="flex-1 py-2.5 px-3 bg-[#060b0e] hover:bg-slate-900 border border-slate-700 text-cyan-300 font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5"
-          >
-            <QrCode className="w-4 h-4" /> Digital QR Pass
-          </button>
+          {onOpenPass && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenPass(member);
+              }}
+              className="flex-1 py-2.5 px-3 bg-[#060b0e] hover:bg-slate-900 border border-slate-700 text-cyan-300 font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5"
+            >
+              <QrCode className="w-4 h-4" /> Digital QR Pass
+            </button>
+          )}
 
           <button
             type="button"
