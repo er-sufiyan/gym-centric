@@ -92,6 +92,9 @@ export default function GymDashboard({
   const [toastMessage, setToastMessage] = useState('');
 
   const isProPlan = (gymProfile?.saasPlan || 'PRO') === 'PRO';
+  const memberLimit = isProPlan ? 500 : 200;
+  const isMemberLimitReached = members.length >= memberLimit;
+  const isNearMemberLimit = !isMemberLimitReached && members.length >= Math.floor(memberLimit * 0.9);
 
   const showToast = (msg) => {
     setToastMessage(msg);
@@ -323,6 +326,13 @@ export default function GymDashboard({
 
   const handleAddMember = async (e) => {
     e.preventDefault();
+    if (isMemberLimitReached) {
+      const limitMsg = `Member limit reached (${members.length}/${memberLimit} on ${gymProfile?.saasPlan || 'BASE'} Plan). Delete members who are expired and have not renewed for a long time to free up space.`;
+      setAddMemberError(limitMsg);
+      showToast(limitMsg);
+      return;
+    }
+
     if (!newMember.name.trim() || !newMember.rollNo.trim() || !newMember.phone.trim()) {
       setAddMemberError('Please fill in Full Name, Roll No., and Phone Number.');
       return;
@@ -1020,7 +1030,7 @@ export default function GymDashboard({
                 Welcome back, {gymProfile?.ownerName?.split(' ')[0] || 'Owner'}
               </h1>
               <p className="text-xs text-slate-400 mt-1">
-                {gymProfile?.gymName} • {gymProfile?.saasPlan} Plan • Isolated gym roster, plans, and fee ledger.
+                {gymProfile?.gymName} • {gymProfile?.saasPlan} Plan ({members.length}/{memberLimit} Members) • Isolated gym roster, plans, and fee ledger.
               </p>
             </div>
 
@@ -1030,9 +1040,16 @@ export default function GymDashboard({
                   setAddMemberError('');
                   setIsAddModalOpen(true);
                 }}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-cyan-400 hover:bg-cyan-300 text-[#060b0e] font-extrabold rounded-xl text-xs transition-colors shadow-lg shadow-cyan-500/15"
+                disabled={isMemberLimitReached}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-cyan-400 hover:bg-cyan-300 disabled:bg-slate-800 disabled:text-slate-400 disabled:cursor-not-allowed text-[#060b0e] font-extrabold rounded-xl text-xs transition-colors shadow-lg shadow-cyan-500/15"
+                title={
+                  isMemberLimitReached
+                    ? `Limit reached (${members.length}/${memberLimit}). Delete old expired members first.`
+                    : 'Register a new member'
+                }
               >
-                <Plus className="w-4 h-4" /> Add Member
+                <Plus className="w-4 h-4" />
+                {isMemberLimitReached ? `Limit Reached (${members.length}/${memberLimit})` : 'Add Member'}
               </button>
 
               <button
@@ -1087,6 +1104,48 @@ export default function GymDashboard({
               )}
             </div>
           </div>
+
+          {(isMemberLimitReached || isNearMemberLimit) && (
+            <div
+              className={`rounded-2xl p-4 border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                isMemberLimitReached
+                  ? 'bg-rose-500/10 border-rose-500/40 text-rose-200'
+                  : 'bg-amber-500/10 border-amber-500/30 text-amber-200'
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <AlertTriangle
+                  className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
+                    isMemberLimitReached ? 'text-rose-400' : 'text-amber-400'
+                  }`}
+                />
+                <div className="text-xs">
+                  <p className="font-extrabold">
+                    {isMemberLimitReached
+                      ? `Member Limit Reached (${members.length}/${memberLimit} on ${gymProfile?.saasPlan || 'BASE'} Plan)`
+                      : `Approaching Member Limit (${members.length}/${memberLimit} on ${gymProfile?.saasPlan || 'BASE'} Plan)`}
+                  </p>
+                  <p className="text-[11px] opacity-90 mt-0.5 leading-relaxed">
+                    Delete those members who are expired and have not renewed for a long time to free up slots. Deleting a member removes all their data from both this site and the database.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('members');
+                  setMemberStatusFilter(expiredMembers.length > 0 ? 'EXPIRED' : 'ALL');
+                }}
+                className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex-shrink-0 transition-colors ${
+                  isMemberLimitReached
+                    ? 'bg-rose-500 hover:bg-rose-400 text-white'
+                    : 'bg-amber-400 hover:bg-amber-300 text-[#060b0e]'
+                }`}
+              >
+                Review Expired Members ({expiredMembers.length})
+              </button>
+            </div>
+          )}
 
           {/* OVERVIEW TAB */}
           {activeTab === 'overview' && (
@@ -1200,6 +1259,9 @@ export default function GymDashboard({
                   </p>
                   <h3 className="text-sm font-bold text-white mt-0.5">
                     {gymProfile?.gymName} Members ({visibleDirectoryMembers.length})
+                    <span className="text-[11px] font-normal text-slate-400 ml-2">
+                      ({members.length}/{memberLimit} Plan Limit)
+                    </span>
                   </h3>
                 </div>
 
@@ -1771,7 +1833,7 @@ export default function GymDashboard({
                 </button>
                 <button
                   type="submit"
-                  disabled={isSavingMember || isCompressingPhoto}
+                  disabled={isSavingMember || isCompressingPhoto || isMemberLimitReached}
                   className="flex-1 py-2.5 bg-cyan-400 text-[#060b0e] font-extrabold rounded-xl text-xs hover:bg-cyan-300 disabled:opacity-60"
                 >
                   {isSavingMember

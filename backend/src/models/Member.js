@@ -95,7 +95,7 @@ const memberSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Expired members not renewed within 3 months are automatically purged by cleanupService
+// Members are retained until explicitly deleted by the Gym Owner (which removes all member data)
 memberSchema.index({ gymId: 1, rollNo: 1 }, { unique: true });
 
 module.exports = mongoose.model('Member', memberSchema);

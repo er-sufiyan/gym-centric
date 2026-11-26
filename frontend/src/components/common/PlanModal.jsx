@@ -94,7 +94,7 @@ export default function PlanModal({ isOpen, onClose, gym, onSave }) {
                 }`}
               >
                 BASE PLAN
-                <span className="block text-[10px] font-normal text-slate-500 mt-0.5">Core Register</span>
+                <span className="block text-[10px] font-normal text-slate-500 mt-0.5">Up to 200 Members • Billing</span>
               </button>
 
               <button
@@ -107,7 +107,7 @@ export default function PlanModal({ isOpen, onClose, gym, onSave }) {
                 }`}
               >
                 PRO PLAN
-                <span className="block text-[10px] font-normal text-cyan-400/80 mt-0.5">QR Pass &amp; Marketing</span>
+                <span className="block text-[10px] font-normal text-cyan-400/80 mt-0.5">Up to 500 Members • QR &amp; Marketing</span>
               </button>
             </div>
           </div>

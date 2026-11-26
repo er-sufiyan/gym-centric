@@ -570,8 +570,8 @@ export default function LoginPage({ gyms = [], onLoginSuccess }) {
                   onChange={(e) => setRegPlan(e.target.value)}
                   className="w-full bg-[#060b0e] border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-cyan-500"
                 >
-                  <option value="BASE">Base Plan (Starter • 30 Days Active)</option>
-                  <option value="PRO">Pro Plan (QR Pass & Marketing • 30 Days Active)</option>
+                  <option value="BASE">Base Plan (Up to 200 Members • 30 Days Active)</option>
+                  <option value="PRO">Pro Plan (Up to 500 Members • QR Pass & Marketing • 30 Days Active)</option>
                 </select>
               </div>
 

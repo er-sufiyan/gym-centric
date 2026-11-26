@@ -502,6 +502,22 @@ exports.createMember = async (req, res) => {
       });
     }
 
+    const [gymDoc, currentMemberCount] = await Promise.all([
+      Gym.findById(gymId).select('saasPlan'),
+      Member.countDocuments({ gymId })
+    ]);
+    if (!gymDoc) {
+      return res.status(404).json({ success: false, message: 'Gym not found' });
+    }
+    const memberLimit = gymDoc.saasPlan === 'PRO' ? 500 : 200;
+    if (currentMemberCount >= memberLimit) {
+      return res.status(403).json({
+        success: false,
+        code: 'MEMBER_LIMIT_REACHED',
+        message: `Member limit reached (${currentMemberCount}/${memberLimit} on ${gymDoc.saasPlan} Plan). Delete expired members who have not renewed for a long time to free up space.`
+      });
+    }
+
     const resolvedPlanName = String(planName || '').trim() || '1 Month Standard';
     const resolvedPlanPrice = Number(planPrice) > 0 ? Number(planPrice) : 1200;
     const resolvedDurationDays = Number(planDurationDays) > 0 ? Number(planDurationDays) : 30;

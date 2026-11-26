@@ -656,7 +656,7 @@ export default function SuperAdminDashboard({
         </div>
 
         <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-400 bg-[#060b0e] px-3 py-1.5 rounded-lg border border-slate-800">
-          <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" /> Member details private • Auto-purge expired &gt;3mo
+          <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" /> Member details private to each gym owner
         </span>
       </div>
 
