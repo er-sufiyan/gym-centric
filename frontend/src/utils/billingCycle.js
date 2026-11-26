@@ -6,6 +6,33 @@ export function parseDisplayDate(dateStr) {
 }
 
 /**
+ * Exact calendar month boundaries (handles 28/29/30/31-day months and 1st-of-next-month reset)
+ */
+export function getCalendarMonthWindow(referenceDate = new Date()) {
+  const curYear = referenceDate.getFullYear();
+  const curMonth = referenceDate.getMonth();
+  const lastDayOfMonth = new Date(curYear, curMonth + 1, 0).getDate();
+  const today = referenceDate.getDate();
+  const daysUntilReset = Math.max(1, lastDayOfMonth - today + 1);
+
+  const fmt = (d) =>
+    d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  const monthStartLabel = fmt(new Date(curYear, curMonth, 1));
+  const monthEndLabel = fmt(new Date(curYear, curMonth, lastDayOfMonth));
+  const nextMonthStartLabel = fmt(new Date(curYear, curMonth + 1, 1));
+
+  return {
+    lastDayOfMonth,
+    today,
+    daysUntilReset,
+    monthStartLabel,
+    monthEndLabel,
+    nextMonthStartLabel
+  };
+}
+
+/**
  * 1-Month Gym Fee Ledger: keeps current calendar month only
  */
 export function getCurrentMonthSection(payments = [], referenceDate = new Date()) {
