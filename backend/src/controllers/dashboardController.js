@@ -73,7 +73,7 @@ function serializeMember(m) {
       'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&h=150&fit=crop&crop=faces',
     admittedDate: formatDisplayDate(m.admittedDate || m.createdAt),
     shift: m.shift,
-    shiftTime: m.shiftTime || (m.shift === 'MORNING' ? '06:30 AM – 08:00 AM' : '06:00 PM – 07:30 PM'),
+    shiftTime: '',
     planName: m.planName,
     planPrice: m.planPrice,
     expiryDate: formatDisplayDate(m.expiryDate),
@@ -523,7 +523,7 @@ exports.createMember = async (req, res) => {
     const resolvedDurationDays = Number(planDurationDays) > 0 ? Number(planDurationDays) : 30;
 
     const expiryDate = new Date(Date.now() + resolvedDurationDays * 24 * 60 * 60 * 1000);
-    const shiftTime = shift === 'MORNING' ? '06:30 AM – 08:00 AM' : '06:00 PM – 07:30 PM';
+    const shiftTime = '';
     const now = new Date();
 
     const member = await Member.create({

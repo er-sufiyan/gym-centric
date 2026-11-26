@@ -186,7 +186,7 @@ export default function QrPassModal({ isOpen, onClose, member, gymProfile }) {
     `• *Roll No:* #${member.rollNo}`,
     `• *Phone:* ${member.phone}`,
     `• *Pass Code:* ${qrCodeValue}`,
-    `• *Shift:* ${member.shift}${member.shiftTime ? ` (${member.shiftTime})` : ''}`,
+    `• *Shift:* ${member.shift}`,
     `• *Plan:* ${member.planName}`,
     `• *Valid Until:* ${member.expiryDate}`,
     ``,

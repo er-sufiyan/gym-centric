@@ -42,7 +42,7 @@ export default function WhatsAppReceiptModal({ isOpen, onClose, receipt, onSent 
       ``,
       `🆔 *Member ID:* #${receipt.rollNo}`,
       `📋 *Plan:* ${receipt.planName}`,
-      `⏰ *Timing:* ${receipt.shift} (${receipt.shiftTime})`,
+      `⏰ *Shift:* ${receipt.shift}`,
       `📅 *Admitted On:* ${receipt.date}`,
       receipt.validUntil ? `✅ *Valid Until:* ${receipt.validUntil}` : null,
       `🧾 *Receipt:* #${receiptId} • ₹${Number(receipt.amount).toLocaleString()} (${receipt.mode})`,
@@ -189,9 +189,9 @@ export default function WhatsAppReceiptModal({ isOpen, onClose, receipt, onSent 
 
             {receipt.shift && (
               <div className="flex items-center justify-between">
-                <span className="text-slate-400">Timing</span>
+                <span className="text-slate-400">Shift</span>
                 <span className="font-semibold text-cyan-300">
-                  {receipt.shift} {receipt.shiftTime ? `(${receipt.shiftTime})` : ''}
+                  {receipt.shift}
                 </span>
               </div>
             )}

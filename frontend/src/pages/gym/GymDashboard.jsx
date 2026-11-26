@@ -436,7 +436,7 @@ export default function GymDashboard({
       rollNo: newMember.rollNo.trim(),
       phone: newMember.phone.trim(),
       admittedDate,
-      shiftTime: newMember.shift === 'MORNING' ? '06:30 AM – 08:00 AM' : '06:00 PM – 07:30 PM',
+      shiftTime: '',
       expiryDate: formattedExpiry,
       daysLeft: Number(newMember.planDurationDays),
       status: 'ACTIVE',
@@ -1739,8 +1739,8 @@ export default function GymDashboard({
                     onChange={(e) => setNewMember({ ...newMember, shift: e.target.value })}
                     className="w-full bg-[#060b0e] border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
                   >
-                    <option value="MORNING">Morning Shift</option>
-                    <option value="EVENING">Evening Shift</option>
+                    <option value="MORNING">Morning</option>
+                    <option value="EVENING">Evening</option>
                   </select>
                 </div>
 

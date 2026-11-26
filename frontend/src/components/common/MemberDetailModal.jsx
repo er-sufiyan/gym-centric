@@ -146,7 +146,7 @@ export default function MemberDetailModal({
               </p>
               <p className="text-sm font-extrabold text-white mt-1.5">{member.shift}</p>
               <p className="text-[11px] text-cyan-300/90 mt-0.5">
-                {member.shiftTime || (isMorning ? '06:00 AM – 09:00 AM' : '05:30 PM – 08:30 PM')}
+                {isMorning ? 'Morning' : 'Evening'}
               </p>
             </div>
 
