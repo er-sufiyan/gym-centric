@@ -820,7 +820,15 @@ exports.recordMemberCheckIn = async (req, res) => {
       member = await Member.findOne({ _id: memberId, gymId });
     }
     if (!member && qrCode) {
-      member = await Member.findOne({ gymId, uniqueQrCode: String(qrCode).trim() });
+      const cleanQr = String(qrCode).trim();
+      member = await Member.findOne({ gymId, uniqueQrCode: cleanQr });
+      if (!member && cleanQr.toUpperCase().startsWith('GYM-')) {
+        const parts = cleanQr.split('-');
+        const extractedRoll = parts[2] || '';
+        if (extractedRoll) {
+          member = await Member.findOne({ gymId, rollNo: extractedRoll });
+        }
+      }
     }
     if (!member && rollNo) {
       member = await Member.findOne({ gymId, rollNo: String(rollNo).trim() });

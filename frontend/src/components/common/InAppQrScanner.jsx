@@ -1,10 +1,41 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import jsQR from 'jsqr';
-import { Camera, X, CheckCircle2, AlertTriangle, XCircle, RefreshCw, Search } from 'lucide-react';
+import { Camera, X, CheckCircle2, AlertTriangle, XCircle, RefreshCw, Search, Upload } from 'lucide-react';
 
 function getCurrentShiftSlot() {
   const hour = new Date().getHours();
   return hour < 14 ? 'MORNING' : 'EVENING';
+}
+
+function findMatchingMember(membersList, rawCode) {
+  const code = String(rawCode || '').trim();
+  if (!code) return null;
+
+  const lower = code.toLowerCase();
+  const normalized = lower.replace(/^#/, '');
+
+  // Extract rollNo if QR code uses GYM-<gym4>-<rollNo> or GYM-<gym4>-<rollNo>-<timestamp>
+  let extractedRoll = '';
+  if (lower.startsWith('gym-')) {
+    const parts = lower.split('-');
+    if (parts.length >= 3) {
+      extractedRoll = parts[2];
+    }
+  }
+
+  return (
+    membersList.find((m) => {
+      const qr = String(m.uniqueQrCode || '').trim().toLowerCase();
+      const roll = String(m.rollNo || '').trim().toLowerCase();
+      const id = String(m.id || '').trim().toLowerCase();
+      return (
+        (qr && qr === lower) ||
+        roll === normalized ||
+        id === normalized ||
+        (extractedRoll && roll === extractedRoll)
+      );
+    }) || null
+  );
 }
 
 export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckIn }) {
@@ -12,7 +43,14 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const rafRef = useRef(null);
+  const detectorRef = useRef(null);
+  const isMountedRef = useRef(false);
   const lastScanRef = useRef({ code: '', at: 0 });
+  const membersRef = useRef(members);
+  const onCheckInRef = useRef(onCheckIn);
+
+  membersRef.current = members;
+  onCheckInRef.current = onCheckIn;
 
   const [scanResult, setScanResult] = useState(null);
   const [scanError, setScanError] = useState('');
@@ -36,106 +74,153 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
     setCameraActive(false);
   }, []);
 
-  const verifyAndRecordScan = useCallback(
-    async ({ qrCode = '', member: matchedMember = null }) => {
-      if (!matchedMember) {
-        setScanResult(null);
-        setScanError(
-          qrCode
-            ? `Unrecognized QR code ("${qrCode.slice(0, 32)}"). No matching member in this gym.`
-            : 'No matching member found for that Roll No. / Pass.'
-        );
-        return;
-      }
+  const verifyAndRecordScan = useCallback(async ({ qrCode = '', member: matchedMember = null }) => {
+    if (!matchedMember) {
+      setScanResult(null);
+      setScanError(
+        qrCode
+          ? `Unrecognized QR code ("${qrCode.slice(0, 36)}"). No matching member in this gym.`
+          : 'No matching member found for that Roll No. / Pass.'
+      );
+      return;
+    }
 
-      setScanError('');
-      setIsCheckingIn(true);
-      try {
-        if (onCheckIn) {
-          const updated = await onCheckIn(matchedMember, qrCode);
-          setScanResult(updated?.member || matchedMember);
-        } else {
-          setScanResult(matchedMember);
-        }
-      } catch (err) {
+    setScanError('');
+    setIsCheckingIn(true);
+    try {
+      if (onCheckInRef.current) {
+        const updated = await onCheckInRef.current(matchedMember, qrCode);
+        setScanResult(updated?.member || matchedMember);
+      } else {
         setScanResult(matchedMember);
-        setScanError(err?.message || 'Check-in update failed');
-      } finally {
-        setIsCheckingIn(false);
       }
-    },
-    [onCheckIn]
-  );
+    } catch (err) {
+      setScanResult(matchedMember);
+      setScanError(err?.message || 'Check-in update failed');
+    } finally {
+      setIsCheckingIn(false);
+    }
+  }, []);
 
   const handleDecodedCode = useCallback(
-    (rawValue) => {
+    (rawValue, bypassCooldown = false) => {
       const code = String(rawValue || '').trim();
       if (!code) return;
 
       const now = Date.now();
-      if (lastScanRef.current.code === code && now - lastScanRef.current.at < 2500) {
+      if (!bypassCooldown && lastScanRef.current.code === code && now - lastScanRef.current.at < 2500) {
         return;
       }
       lastScanRef.current = { code, at: now };
 
-      const normalized = code.replace(/^#/, '').toLowerCase();
-      const matched = members.find((m) => {
-        const qr = String(m.uniqueQrCode || '').trim().toLowerCase();
-        const roll = String(m.rollNo || '').trim().toLowerCase();
-        const id = String(m.id || '').trim().toLowerCase();
-        return (qr && qr === code.toLowerCase()) || roll === normalized || id === normalized;
-      });
-
-      verifyAndRecordScan({ qrCode: code, member: matched || null });
+      const matched = findMatchingMember(membersRef.current, code);
+      verifyAndRecordScan({ qrCode: code, member: matched });
     },
-    [members, verifyAndRecordScan]
+    [verifyAndRecordScan]
   );
+
+  const decodeCanvasFrame = useCallback(async (canvas) => {
+    // 1. Try native hardware-accelerated BarcodeDetector if available
+    if (detectorRef.current) {
+      try {
+        const results = await detectorRef.current.detect(canvas);
+        if (results && results.length > 0 && results[0]?.rawValue) {
+          return results[0].rawValue;
+        }
+      } catch {
+        // Fallback to jsQR
+      }
+    }
+
+    // 2. Universal jsQR fallback (supports dark/inverted & standard QR passes)
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return null;
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const decoded = jsQR(imgData.data, imgData.width, imgData.height, {
+      inversionAttempts: 'attemptBoth'
+    });
+    return decoded?.data || null;
+  }, []);
 
   const startCamera = useCallback(async () => {
     stopCamera();
     setCameraError('');
 
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      setCameraError('Camera API is not supported in this browser. Use Roll No. lookup below.');
+    if (typeof window !== 'undefined' && !window.isSecureContext) {
+      setCameraError('Camera access requires HTTPS (secure site). Use Roll No. or QR Image below.');
       return;
     }
 
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      setCameraError('Camera is not supported in this browser. Use QR Image upload or Roll No. below.');
+      return;
+    }
+
+    if (typeof window !== 'undefined' && 'BarcodeDetector' in window && !detectorRef.current) {
+      try {
+        detectorRef.current = new window.BarcodeDetector({ formats: ['qr_code'] });
+      } catch {
+        detectorRef.current = null;
+      }
+    }
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: 'environment' },
-          width: { ideal: 640 },
-          height: { ideal: 640 }
-        },
-        audio: false
-      });
+      let stream = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        });
+      } catch (constraintErr) {
+        if (constraintErr?.name === 'NotAllowedError' || constraintErr?.name === 'PermissionDeniedError') {
+          throw constraintErr;
+        }
+        // Fallback to default camera when strict constraints fail on laptop/older mobile
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
+
+      if (!isMountedRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+
       streamRef.current = stream;
 
       if (videoRef.current) {
+        videoRef.current.setAttribute('playsinline', 'true');
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
       setCameraActive(true);
 
       let lastFrameCheck = 0;
-      const tick = (timestamp) => {
-        if (!streamRef.current || !videoRef.current) return;
+      let decodingBusy = false;
+
+      const tick = async (timestamp) => {
+        if (!streamRef.current || !videoRef.current || !isMountedRef.current) return;
         const video = videoRef.current;
 
-        if (video.readyState === video.HAVE_ENOUGH_DATA && timestamp - lastFrameCheck >= 120) {
+        if (!decodingBusy && video.readyState >= video.HAVE_CURRENT_DATA && timestamp - lastFrameCheck >= 130) {
           lastFrameCheck = timestamp;
           const canvas = canvasRef.current;
           if (canvas && video.videoWidth > 0 && video.videoHeight > 0) {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const decoded = jsQR(imgData.data, imgData.width, imgData.height, {
-              inversionAttempts: 'dontInvert'
-            });
-            if (decoded?.data) {
-              handleDecodedCode(decoded.data);
+            decodingBusy = true;
+            try {
+              const scale = Math.min(1, 720 / Math.max(video.videoWidth, video.videoHeight));
+              canvas.width = Math.max(1, Math.floor(video.videoWidth * scale));
+              canvas.height = Math.max(1, Math.floor(video.videoHeight * scale));
+              const ctx = canvas.getContext('2d', { willReadFrequently: true });
+              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+              const decodedValue = await decodeCanvasFrame(canvas);
+              if (decodedValue) {
+                handleDecodedCode(decodedValue);
+              }
+            } finally {
+              decodingBusy = false;
             }
           }
         }
@@ -144,17 +229,24 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
 
       rafRef.current = requestAnimationFrame(tick);
     } catch (err) {
-      setCameraError(
-        err?.name === 'NotAllowedError'
-          ? 'Camera permission denied. Allow camera access or use Roll No. lookup below.'
-          : 'Could not open camera on this device. Use Roll No. lookup below.'
-      );
+      const name = err?.name || '';
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        setCameraError('Camera access blocked in browser settings. Allow camera permission, or scan a QR image / Roll No. below.');
+      } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+        setCameraError('No camera found on this device. Use QR Image upload or Roll No. lookup below.');
+      } else if (name === 'NotReadableError' || name === 'TrackStartError') {
+        setCameraError('Camera is busy in another app/tab. Close the other app or use Roll No. lookup below.');
+      } else {
+        setCameraError('Could not access camera. Use QR Image upload or Roll No. lookup below.');
+      }
       stopCamera();
     }
-  }, [handleDecodedCode, stopCamera]);
+  }, [decodeCanvasFrame, handleDecodedCode, stopCamera]);
 
   useEffect(() => {
+    isMountedRef.current = isOpen;
     if (isOpen) {
+      lastScanRef.current = { code: '', at: 0 };
       setScanResult(null);
       setScanError('');
       setManualQuery('');
@@ -162,7 +254,10 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
     } else {
       stopCamera();
     }
-    return () => stopCamera();
+    return () => {
+      isMountedRef.current = false;
+      stopCamera();
+    };
   }, [isOpen, startCamera, stopCamera]);
 
   if (!isOpen) return null;
@@ -171,7 +266,42 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
     e.preventDefault();
     const q = manualQuery.trim();
     if (!q) return;
-    handleDecodedCode(q);
+    handleDecodedCode(q, true);
+  };
+
+  const handleQrImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const objectUrl = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error('Could not read selected image'));
+        el.src = objectUrl;
+      });
+      const canvas = canvasRef.current || document.createElement('canvas');
+      const maxSide = 1000;
+      const scale = Math.min(1, maxSide / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
+      canvas.width = Math.max(1, Math.floor((img.naturalWidth || img.width) * scale));
+      canvas.height = Math.max(1, Math.floor((img.naturalHeight || img.height) * scale));
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      const decoded = await decodeCanvasFrame(canvas);
+      if (!decoded) {
+        setScanResult(null);
+        setScanError('No QR code found in that image. Try a clearer photo or enter Roll No.');
+        return;
+      }
+      handleDecodedCode(decoded, true);
+    } catch (err) {
+      setScanError(err?.message || 'Failed to scan QR image');
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
   };
 
   const currentShift = getCurrentShiftSlot();
@@ -233,21 +363,31 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
                 <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto mb-2">
                   <Camera className="w-6 h-6" />
                 </div>
-                <p className="text-xs text-slate-300 font-medium">
+                <p className="text-xs text-slate-300 font-medium leading-relaxed">
                   {cameraError || 'Starting phone camera...'}
                 </p>
-                <button
-                  type="button"
-                  onClick={startCamera}
-                  className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[11px] font-bold"
-                >
-                  <RefreshCw className="w-3 h-3" /> Retry Camera
-                </button>
+                <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={startCamera}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[11px] font-bold"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Retry Camera
+                  </button>
+                </div>
               </div>
             )}
           </div>
 
-          {/* Manual Roll No / QR Code Fallback */}
+          {/* Scan QR Image Fallback */}
+          <div className="mt-3 flex justify-center">
+            <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-cyan-300 text-[11px] font-bold transition-colors">
+              <Upload className="w-3.5 h-3.5" /> Scan QR from Image / Screenshot
+              <input type="file" accept="image/*" onChange={handleQrImageUpload} className="hidden" />
+            </label>
+          </div>
+
+          {/* Manual Roll No / QR Code Lookup */}
           <form onSubmit={handleManualLookup} className="mt-4 pt-4 border-t border-slate-800 space-y-2">
             <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
               Or Verify by Roll No. / Pass Code:
@@ -339,7 +479,7 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
                     {isExpiredResult
                       ? 'ACCESS DENIED: Membership expired! Collect fee before entry.'
                       : isShiftMismatch
-                      ? `SHIFT WARNING: ${scanResult.shift} member scanned during ${currentShift} slot.`
+                      ? `VALID PASS • Shift Note: ${scanResult.shift} member scanned during ${currentShift} slot.`
                       : 'ACCESS GRANTED: Verified active member & check-in recorded.'}
                   </p>
                 </div>
