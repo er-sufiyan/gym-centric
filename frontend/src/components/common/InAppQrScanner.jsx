@@ -1,11 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import jsQR from 'jsqr';
-import { Camera, X, CheckCircle2, AlertTriangle, XCircle, RefreshCw, Search, Upload } from 'lucide-react';
-
-function getCurrentShiftSlot() {
-  const hour = new Date().getHours();
-  return hour < 14 ? 'MORNING' : 'EVENING';
-}
+import { Camera, X, RefreshCw, Search, Upload } from 'lucide-react';
 
 function findMatchingMember(membersList, rawCode) {
   const code = String(rawCode || '').trim();
@@ -38,7 +33,7 @@ function findMatchingMember(membersList, rawCode) {
   );
 }
 
-export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckIn }) {
+export default function InAppQrScanner({ isOpen, onClose, members = [], onMemberFound }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -47,17 +42,17 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
   const isMountedRef = useRef(false);
   const lastScanRef = useRef({ code: '', at: 0 });
   const membersRef = useRef(members);
-  const onCheckInRef = useRef(onCheckIn);
+  const onMemberFoundRef = useRef(onMemberFound);
+  const onCloseRef = useRef(onClose);
 
   membersRef.current = members;
-  onCheckInRef.current = onCheckIn;
+  onMemberFoundRef.current = onMemberFound;
+  onCloseRef.current = onClose;
 
-  const [scanResult, setScanResult] = useState(null);
   const [scanError, setScanError] = useState('');
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [manualQuery, setManualQuery] = useState('');
-  const [isCheckingIn, setIsCheckingIn] = useState(false);
 
   const stopCamera = useCallback(() => {
     if (rafRef.current) {
@@ -74,33 +69,24 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
     setCameraActive(false);
   }, []);
 
-  const verifyAndRecordScan = useCallback(async ({ qrCode = '', member: matchedMember = null }) => {
-    if (!matchedMember) {
-      setScanResult(null);
-      setScanError(
-        qrCode
-          ? `Unrecognized QR code ("${qrCode.slice(0, 36)}"). No matching member in this gym.`
-          : 'No matching member found for that Roll No. / Pass.'
-      );
-      return;
-    }
-
-    setScanError('');
-    setIsCheckingIn(true);
-    try {
-      if (onCheckInRef.current) {
-        const updated = await onCheckInRef.current(matchedMember, qrCode);
-        setScanResult(updated?.member || matchedMember);
-      } else {
-        setScanResult(matchedMember);
+  const openMatchedMemberCard = useCallback(
+    (matchedMember, qrCode = '') => {
+      if (!matchedMember) {
+        setScanError(
+          qrCode
+            ? `Unrecognized QR code ("${qrCode.slice(0, 36)}"). No matching member in this gym.`
+            : 'No matching member found for that Roll No. / Pass.'
+        );
+        return;
       }
-    } catch (err) {
-      setScanResult(matchedMember);
-      setScanError(err?.message || 'Check-in update failed');
-    } finally {
-      setIsCheckingIn(false);
-    }
-  }, []);
+
+      setScanError('');
+      stopCamera();
+      onCloseRef.current?.();
+      onMemberFoundRef.current?.(matchedMember, qrCode);
+    },
+    [stopCamera]
+  );
 
   const handleDecodedCode = useCallback(
     (rawValue, bypassCooldown = false) => {
@@ -114,13 +100,12 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
       lastScanRef.current = { code, at: now };
 
       const matched = findMatchingMember(membersRef.current, code);
-      verifyAndRecordScan({ qrCode: code, member: matched });
+      openMatchedMemberCard(matched, code);
     },
-    [verifyAndRecordScan]
+    [openMatchedMemberCard]
   );
 
   const decodeCanvasFrame = useCallback(async (canvas) => {
-    // 1. Try native hardware-accelerated BarcodeDetector if available
     if (detectorRef.current) {
       try {
         const results = await detectorRef.current.detect(canvas);
@@ -132,7 +117,6 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
       }
     }
 
-    // 2. Universal jsQR fallback (supports dark/inverted & standard QR passes)
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return null;
     const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -147,7 +131,7 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
     setCameraError('');
 
     if (typeof window !== 'undefined' && !window.isSecureContext) {
-      setCameraError('Camera access requires HTTPS (secure site). Use Roll No. or QR Image below.');
+      setCameraError('Camera requires HTTPS. Use QR Image upload or Roll No. below.');
       return;
     }
 
@@ -179,7 +163,6 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
         if (constraintErr?.name === 'NotAllowedError' || constraintErr?.name === 'PermissionDeniedError') {
           throw constraintErr;
         }
-        // Fallback to default camera when strict constraints fail on laptop/older mobile
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       }
 
@@ -237,7 +220,7 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
       } else if (name === 'NotReadableError' || name === 'TrackStartError') {
         setCameraError('Camera is busy in another app/tab. Close the other app or use Roll No. lookup below.');
       } else {
-        setCameraError('Could not access camera. Use QR Image upload or Roll No. lookup below.');
+        setCameraError('Could not open camera. Use QR Image upload or Roll No. lookup below.');
       }
       stopCamera();
     }
@@ -247,7 +230,6 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
     isMountedRef.current = isOpen;
     if (isOpen) {
       lastScanRef.current = { code: '', at: 0 };
-      setScanResult(null);
       setScanError('');
       setManualQuery('');
       startCamera();
@@ -292,7 +274,6 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
 
       const decoded = await decodeCanvasFrame(canvas);
       if (!decoded) {
-        setScanResult(null);
         setScanError('No QR code found in that image. Try a clearer photo or enter Roll No.');
         return;
       }
@@ -304,10 +285,6 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
     }
   };
 
-  const currentShift = getCurrentShiftSlot();
-  const isExpiredResult = scanResult && (scanResult.status === 'EXPIRED' || Number(scanResult.daysLeft ?? 0) <= 0);
-  const isShiftMismatch = scanResult && !isExpiredResult && scanResult.shift !== currentShift;
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
       <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md max-h-[92vh] overflow-y-auto shadow-2xl">
@@ -318,9 +295,9 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
               <Camera className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white">In-App Mobile QR Scanner</h3>
+              <h3 className="text-sm font-bold text-white">Scan Member QR Pass</h3>
               <p className="text-[11px] text-emerald-400 font-medium">
-                {cameraActive ? 'Live Camera Active • Point at QR Pass' : 'Pro Plan Exclusive • Zero Hardware'}
+                {cameraActive ? 'Live Camera Active • Point at QR Pass' : 'Scan QR to view full member details'}
               </p>
             </div>
           </div>
@@ -328,7 +305,6 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
             type="button"
             onClick={() => {
               stopCamera();
-              setScanResult(null);
               setScanError('');
               onClose();
             }}
@@ -390,7 +366,7 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
           {/* Manual Roll No / QR Code Lookup */}
           <form onSubmit={handleManualLookup} className="mt-4 pt-4 border-t border-slate-800 space-y-2">
             <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-              Or Verify by Roll No. / Pass Code:
+              Or Open Profile by Roll No. / Pass Code:
             </label>
             <div className="flex gap-2">
               <div className="relative flex-1">
@@ -405,26 +381,25 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
               </div>
               <button
                 type="submit"
-                disabled={isCheckingIn}
-                className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs transition-colors disabled:opacity-60"
+                className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs transition-colors"
               >
-                {isCheckingIn ? 'Checking...' : 'Check In'}
+                View Details
               </button>
             </div>
           </form>
 
-          {/* Quick Member Test Chips */}
+          {/* Quick Member Lookup Chips */}
           {members.length > 0 && (
             <div className="mt-3">
               <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-                Quick Member Check-In:
+                Quick Member Profile:
               </p>
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {members.slice(0, 8).map((m) => (
                   <button
                     key={m.id}
                     type="button"
-                    onClick={() => verifyAndRecordScan({ qrCode: m.uniqueQrCode || m.rollNo, member: m })}
+                    onClick={() => openMatchedMemberCard(m, m.uniqueQrCode || m.rollNo)}
                     className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 hover:border-emerald-500 rounded-lg text-xs font-medium text-slate-200 flex-shrink-0"
                   >
                     #{m.rollNo} {m.name.split(' ')[0]}
@@ -437,53 +412,6 @@ export default function InAppQrScanner({ isOpen, onClose, members = [], onCheckI
           {scanError && (
             <div className="mt-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold">
               {scanError}
-            </div>
-          )}
-
-          {/* Instant Result Pop-up */}
-          {scanResult && (
-            <div
-              className={`mt-4 p-4 rounded-xl border ${
-                isExpiredResult
-                  ? 'bg-rose-500/10 border-rose-500/40 text-rose-300'
-                  : isShiftMismatch
-                  ? 'bg-amber-500/10 border-amber-500/40 text-amber-300'
-                  : 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
-              }`}
-            >
-              <div className="flex items-start gap-3">
-                {isExpiredResult ? (
-                  <XCircle className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
-                ) : isShiftMismatch ? (
-                  <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-                ) : (
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
-                )}
-
-                <div className="flex-1 text-xs">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-bold text-white text-sm">
-                      {scanResult.name} <span className="text-slate-400 font-normal">#{scanResult.rollNo}</span>
-                    </p>
-                    <span className="font-bold text-[10px] px-2 py-0.5 rounded-full bg-slate-950/60 uppercase">
-                      {isExpiredResult ? 'EXPIRED' : 'ACTIVE'}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-slate-300">
-                    Shift: <strong>{scanResult.shift}</strong> | Plan: <strong>{scanResult.planName}</strong>
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-slate-400">
-                    Valid Until: {scanResult.expiryDate} • Total Check-ins: {scanResult.totalCheckIns || 1}
-                  </p>
-                  <p className="mt-1.5 font-semibold">
-                    {isExpiredResult
-                      ? 'ACCESS DENIED: Membership expired! Collect fee before entry.'
-                      : isShiftMismatch
-                      ? `VALID PASS • Shift Note: ${scanResult.shift} member scanned during ${currentShift} slot.`
-                      : 'ACCESS GRANTED: Verified active member & check-in recorded.'}
-                  </p>
-                </div>
-              </div>
             </div>
           )}
         </div>
