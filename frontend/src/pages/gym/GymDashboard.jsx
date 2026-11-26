@@ -87,6 +87,7 @@ export default function GymDashboard({
   const [isCompressingPhoto, setIsCompressingPhoto] = useState(false);
   const [isSavingMember, setIsSavingMember] = useState(false);
   const [photoError, setPhotoError] = useState('');
+  const [addMemberError, setAddMemberError] = useState('');
   const [toastMessage, setToastMessage] = useState('');
 
   const showToast = (msg) => {
@@ -144,6 +145,23 @@ export default function GymDashboard({
     });
     setShiftFilter('ALL');
   }, [gymProfile?.id]);
+
+  useEffect(() => {
+    if (!gymPlans || gymPlans.length === 0) return;
+    setNewMember((prev) => {
+      if (prev.selectedPlanId && gymPlans.some((p) => p.id === prev.selectedPlanId)) {
+        return prev;
+      }
+      const first = gymPlans[0];
+      return {
+        ...prev,
+        selectedPlanId: first.id,
+        planName: first.name,
+        planDurationDays: first.durationDays,
+        planPrice: first.price
+      };
+    });
+  }, [gymPlans]);
 
   const isLeastInteractMember = (m) =>
     m.status === 'EXPIRED' &&
@@ -302,7 +320,17 @@ export default function GymDashboard({
 
   const handleAddMember = async (e) => {
     e.preventDefault();
-    if (!newMember.name.trim() || !newMember.rollNo.trim() || !newMember.phone.trim()) return;
+    if (!newMember.name.trim() || !newMember.rollNo.trim() || !newMember.phone.trim()) {
+      setAddMemberError('Please fill in Full Name, Roll No., and Phone Number.');
+      return;
+    }
+
+    setAddMemberError('');
+    const fallbackPlan = gymPlans[0] || { id: '', name: '1 Month Standard', durationDays: 30, price: 1200 };
+    const resolvedPlanName = String(newMember.planName || fallbackPlan.name || '1 Month Standard').trim();
+    const resolvedPlanPrice = Number(newMember.planPrice) > 0 ? Number(newMember.planPrice) : Number(fallbackPlan.price || 1200);
+    const resolvedDurationDays =
+      Number(newMember.planDurationDays) > 0 ? Number(newMember.planDurationDays) : Number(fallbackPlan.durationDays || 30);
 
     if (dbConnected) {
       setIsSavingMember(true);
@@ -321,9 +349,9 @@ export default function GymDashboard({
           rollNo: newMember.rollNo.trim(),
           phone: newMember.phone.trim(),
           shift: newMember.shift,
-          planName: newMember.planName,
-          planPrice: Number(newMember.planPrice),
-          planDurationDays: Number(newMember.planDurationDays),
+          planName: resolvedPlanName,
+          planPrice: resolvedPlanPrice,
+          planDurationDays: resolvedDurationDays,
           photoUrl: finalPhotoUrl,
           photoFileId: finalPhotoFileId
         });
@@ -333,19 +361,19 @@ export default function GymDashboard({
         setIsAddModalOpen(false);
         setCompressedPhoto(null);
         setPhotoError('');
-        const defaultPlan = gymPlans[0] || { id: '', name: '1 Month Standard', durationDays: 30, price: 1200 };
+        setAddMemberError('');
         setNewMember({
           name: '',
           rollNo: '',
           phone: '',
           shift: 'MORNING',
-          selectedPlanId: defaultPlan.id,
-          planName: defaultPlan.name,
-          planDurationDays: defaultPlan.durationDays,
-          planPrice: defaultPlan.price,
+          selectedPlanId: fallbackPlan.id,
+          planName: fallbackPlan.name,
+          planDurationDays: fallbackPlan.durationDays,
+          planPrice: fallbackPlan.price,
           photoUrl: ''
         });
-        showToast(`${res.member.name} (#${res.member.rollNo}) saved to MongoDB!`);
+        showToast(`Member "${res.member.name}" (#${res.member.rollNo}) saved successfully!`);
         if (sendWaReceiptOnAdd) {
           setReceiptToSend({
             type: 'MEMBER_WELCOME',
@@ -365,7 +393,9 @@ export default function GymDashboard({
         }
         return;
       } catch (err) {
-        showToast(err.message);
+        const msg = err?.message || 'Failed to save member. Please try again.';
+        setAddMemberError(msg);
+        showToast(msg);
         return;
       } finally {
         setIsSavingMember(false);
@@ -939,7 +969,7 @@ export default function GymDashboard({
       ) : (
         <div className="space-y-6">
           {toastMessage && (
-            <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-semibold">
+            <div className="fixed top-4 right-4 z-[70] max-w-md flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-[#0b1418] border border-cyan-500/50 text-cyan-300 text-xs font-semibold shadow-2xl shadow-cyan-500/20">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-cyan-400 flex-shrink-0" />
                 <span>{toastMessage}</span>
@@ -966,7 +996,10 @@ export default function GymDashboard({
 
             <div className="flex items-center gap-2 flex-wrap">
               <button
-                onClick={() => setIsAddModalOpen(true)}
+                onClick={() => {
+                  setAddMemberError('');
+                  setIsAddModalOpen(true);
+                }}
                 className="flex items-center gap-1.5 px-3.5 py-2 bg-cyan-400 hover:bg-cyan-300 text-[#060b0e] font-extrabold rounded-xl text-xs transition-colors shadow-lg shadow-cyan-500/15"
               >
                 <Plus className="w-4 h-4" /> Add Member
@@ -1504,10 +1537,17 @@ export default function GymDashboard({
 
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="bg-[#0b1418] border border-slate-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl p-6">
+          <div className="bg-[#0b1418] border border-slate-800 rounded-3xl w-full max-w-md max-h-[92vh] overflow-y-auto shadow-2xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-bold text-white">Register Member ({gymProfile?.gymName})</h3>
-              <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-white">
+              <button
+                type="button"
+                onClick={() => {
+                  setAddMemberError('');
+                  setIsAddModalOpen(false);
+                }}
+                className="text-slate-400 hover:text-white"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -1676,6 +1716,12 @@ export default function GymDashboard({
                   className="accent-emerald-400 w-4 h-4 rounded cursor-pointer"
                 />
               </label>
+
+              {addMemberError && (
+                <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs font-semibold">
+                  {addMemberError}
+                </div>
+              )}
 
               <div className="flex gap-2 pt-2">
                 <button

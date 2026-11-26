@@ -494,7 +494,18 @@ exports.createMember = async (req, res) => {
       photoFileId = ''
     } = req.body;
 
-    const expiryDate = new Date(Date.now() + Number(planDurationDays) * 24 * 60 * 60 * 1000);
+    if (!String(name || '').trim() || !String(rollNo || '').trim() || !String(phone || '').trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Member name, Roll No., and Phone number are required.'
+      });
+    }
+
+    const resolvedPlanName = String(planName || '').trim() || '1 Month Standard';
+    const resolvedPlanPrice = Number(planPrice) > 0 ? Number(planPrice) : 1200;
+    const resolvedDurationDays = Number(planDurationDays) > 0 ? Number(planDurationDays) : 30;
+
+    const expiryDate = new Date(Date.now() + resolvedDurationDays * 24 * 60 * 60 * 1000);
     const shiftTime = shift === 'MORNING' ? '06:30 AM – 08:00 AM' : '06:00 PM – 07:30 PM';
     const now = new Date();
 
@@ -510,8 +521,8 @@ exports.createMember = async (req, res) => {
       admittedDate: now,
       shift,
       shiftTime,
-      planName,
-      planPrice: Number(planPrice),
+      planName: resolvedPlanName,
+      planPrice: resolvedPlanPrice,
       expiryDate,
       status: 'ACTIVE',
       lastInteractionDate: now,
@@ -528,7 +539,7 @@ exports.createMember = async (req, res) => {
         memberName: member.name,
         rollNo: member.rollNo,
         planName: member.planName,
-        amount: Number(planPrice),
+        amount: resolvedPlanPrice,
         mode: 'CASH',
         notes: member.planName,
         paymentDate: now
@@ -540,7 +551,7 @@ exports.createMember = async (req, res) => {
         memberName: member.name,
         rollNo: member.rollNo,
         planName: member.planName,
-        amount: Number(planPrice),
+        amount: resolvedPlanPrice,
         mode: 'CASH',
         paymentDate: now,
         expiresAt: getEndOfMonthDate(now)
@@ -554,6 +565,12 @@ exports.createMember = async (req, res) => {
       ledgerEntry: serializePayment(ledgerEntry)
     });
   } catch (error) {
+    if (error?.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: `Roll No. #${String(req.body?.rollNo || '').trim()} already exists in this gym. Please use a different Roll No.`
+      });
+    }
     return res.status(500).json({ success: false, message: error.message });
   }
 };
