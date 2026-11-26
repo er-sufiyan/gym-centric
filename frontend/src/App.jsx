@@ -32,6 +32,15 @@ const readStoredSession = (key) => {
   }
 };
 
+export const PLATFORM_SETTINGS_KEY = 'gymcentric_platform_settings';
+
+const readStoredPlatformSettings = () => {
+  const stored = readStoredSession(PLATFORM_SETTINGS_KEY);
+  return {
+    supportWhatsApp: stored?.supportWhatsApp || import.meta.env.VITE_PLATFORM_WHATSAPP_NUMBER || ''
+  };
+};
+
 export default function App() {
   const [isAdminRoute, setIsAdminRoute] = useState(isAdminPath);
   const [adminRole, setAdminRole] = useState('superadmin'); // Used only inside /admin
@@ -40,6 +49,7 @@ export default function App() {
 
   const [adminSession, setAdminSession] = useState(() => readStoredSession(ADMIN_SESSION_KEY));
   const [authenticatedOwner, setAuthenticatedOwner] = useState(() => readStoredSession(OWNER_SESSION_KEY));
+  const [platformSettings, setPlatformSettings] = useState(readStoredPlatformSettings);
 
   const [gyms, setGyms] = useState(INITIAL_GYMS);
   const [activeGymId, setActiveGymId] = useState(INITIAL_GYMS[0].id);
@@ -68,10 +78,22 @@ export default function App() {
         membersByGym: dbMembers,
         memberPaymentsByGym: dbPayments,
         gymLedgerByGym: dbLedger,
-        saasPayments: dbSaas
+        saasPayments: dbSaas,
+        platformSettings: dbPlatformSettings
       } = res.data;
 
       setDbConnected(true);
+      if (dbPlatformSettings) {
+        const nextSettings = {
+          supportWhatsApp: dbPlatformSettings.supportWhatsApp || import.meta.env.VITE_PLATFORM_WHATSAPP_NUMBER || ''
+        };
+        setPlatformSettings(nextSettings);
+        try {
+          localStorage.setItem(PLATFORM_SETTINGS_KEY, JSON.stringify(nextSettings));
+        } catch {
+          // ignore storage errors
+        }
+      }
       if (dbGyms && dbGyms.length > 0) {
         setGyms(dbGyms);
         setActiveGymId((prevId) => (dbGyms.some((g) => g.id === prevId) ? prevId : dbGyms[0].id));
@@ -306,6 +328,15 @@ export default function App() {
     setSearchQuery('');
   };
 
+  const handleUpdatePlatformSettings = (nextSettings) => {
+    setPlatformSettings(nextSettings);
+    try {
+      localStorage.setItem(PLATFORM_SETTINGS_KEY, JSON.stringify(nextSettings));
+    } catch {
+      // ignore storage errors
+    }
+  };
+
   // ROUTE 1: /admin -> Password-Protected Super Admin Portal
   if (isAdminRoute) {
     if (!adminSession?.token) {
@@ -333,6 +364,8 @@ export default function App() {
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         dbConnected={dbConnected}
+        platformSettings={platformSettings}
+        onUpdatePlatformSettings={handleUpdatePlatformSettings}
         onOpenLogin={navigateToGymLogin}
         allowPortalSwitch={true}
         onLogout={handleAdminLogout}
@@ -355,6 +388,7 @@ export default function App() {
         ledgerEntries={gymLedgerByGym[activeGym.id] || []}
         setLedgerEntries={setScopedLedger}
         dbConnected={dbConnected}
+        platformSettings={platformSettings}
         onOpenLogin={navigateToGymLogin}
         allowPortalSwitch={true}
         onLogout={handleAdminLogout}
@@ -386,6 +420,7 @@ export default function App() {
       ledgerEntries={gymLedgerByGym[loggedInGym.id] || []}
       setLedgerEntries={setScopedLedger}
       dbConnected={dbConnected}
+      platformSettings={platformSettings}
       allowPortalSwitch={false}
       onLogout={handleOwnerLogout}
     />

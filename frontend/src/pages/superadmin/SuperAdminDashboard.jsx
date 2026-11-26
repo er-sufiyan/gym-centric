@@ -30,13 +30,15 @@ import MonthlyResetBanner from '../../components/common/MonthlyResetBanner';
 import BroadcastMessageModal from '../../components/common/BroadcastMessageModal';
 import ConfirmDeleteModal from '../../components/common/ConfirmDeleteModal';
 import { getOneYearHistory } from '../../utils/billingCycle';
+import { buildWhatsAppUrl } from '../../utils/whatsapp';
 import {
   apiCreateGym,
   apiToggleGymStatus,
   apiDeleteGym,
   apiUpdateGymPlan,
   apiRecordSaasPayment,
-  apiDeleteSaasPayment
+  apiDeleteSaasPayment,
+  apiUpdatePlatformSettings
 } from '../../services/api';
 
 export default function SuperAdminDashboard({
@@ -54,6 +56,8 @@ export default function SuperAdminDashboard({
   searchQuery = '',
   setSearchQuery,
   dbConnected = false,
+  platformSettings = {},
+  onUpdatePlatformSettings,
   onOpenLogin,
   allowPortalSwitch = true,
   onLogout
@@ -68,6 +72,10 @@ export default function SuperAdminDashboard({
   const [isManualPayOpen, setIsManualPayOpen] = useState(false);
   const [isAddGymOpen, setIsAddGymOpen] = useState(false);
   const [isBroadcastOpen, setIsBroadcastOpen] = useState(false);
+  const [isSupportWaModalOpen, setIsSupportWaModalOpen] = useState(false);
+  const [supportWaInput, setSupportWaInput] = useState(platformSettings?.supportWhatsApp || '');
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [settingsError, setSettingsError] = useState('');
   const [paymentToDelete, setPaymentToDelete] = useState(null);
   const [gymToDelete, setGymToDelete] = useState(null);
   const [receiptToSend, setReceiptToSend] = useState(null);
@@ -745,6 +753,19 @@ export default function SuperAdminDashboard({
 
           <div className="flex items-center gap-2 flex-wrap">
             <button
+              onClick={() => {
+                setSupportWaInput(platformSettings?.supportWhatsApp || '');
+                setSettingsError('');
+                setIsSupportWaModalOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-[#0b1418] hover:bg-slate-900 border border-slate-700/80 text-slate-200 font-semibold rounded-xl text-xs transition-colors"
+              title="Set your WhatsApp number for suspended gym owners to contact you"
+            >
+              <MessageCircle className="w-4 h-4 text-emerald-400" />
+              {platformSettings?.supportWhatsApp ? 'Support WhatsApp' : 'Set Support WhatsApp'}
+            </button>
+
+            <button
               onClick={() => setIsBroadcastOpen(true)}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-[#0b1418] hover:bg-slate-900 border border-slate-700/80 text-slate-200 font-semibold rounded-xl text-xs transition-colors"
             >
@@ -1412,6 +1433,125 @@ export default function SuperAdminDashboard({
         receipt={receiptToSend}
         onSent={(msg) => showToast(msg)}
       />
+
+      {isSupportWaModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="bg-[#0b1418] border border-slate-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800/80 bg-[#081014]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                  <MessageCircle className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-emerald-400">
+                    Platform Support
+                  </p>
+                  <h3 className="text-sm font-bold text-white">Platform Owner WhatsApp</h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSupportWaModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800/60"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const trimmed = supportWaInput.trim();
+                const digits = trimmed.replace(/\D/g, '');
+                if (trimmed && digits.length < 10) {
+                  setSettingsError('Enter a valid 10-digit mobile number or full number with country code.');
+                  return;
+                }
+                setSettingsError('');
+                setIsSavingSettings(true);
+                try {
+                  if (dbConnected) {
+                    const res = await apiUpdatePlatformSettings({ supportWhatsApp: trimmed });
+                    onUpdatePlatformSettings?.(res.platformSettings);
+                  } else {
+                    onUpdatePlatformSettings?.({ supportWhatsApp: trimmed });
+                  }
+                  setIsSupportWaModalOpen(false);
+                  showToast(
+                    trimmed
+                      ? `Platform Owner WhatsApp updated to ${trimmed}`
+                      : 'Platform Owner WhatsApp number cleared.'
+                  );
+                } catch (err) {
+                  setSettingsError(err.message || 'Failed to save settings');
+                } finally {
+                  setIsSavingSettings(false);
+                }
+              }}
+              className="p-6 space-y-4"
+            >
+              <p className="text-xs text-slate-400 leading-relaxed">
+                When a gym account is paused/blocked, tapping <strong className="text-slate-200">Contact Platform Owner on WhatsApp</strong> will open a WhatsApp chat directly to this number.
+              </p>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
+                  Your WhatsApp Number
+                </label>
+                <input
+                  type="text"
+                  value={supportWaInput}
+                  onChange={(e) => setSupportWaInput(e.target.value)}
+                  placeholder="+91 98765 43210"
+                  className="w-full px-3.5 py-2.5 bg-[#060b0e] border border-slate-700/80 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                />
+                <p className="text-[11px] text-slate-500 mt-1.5">
+                  10-digit numbers automatically use +91 (India). For other countries, include the country code (e.g. +1...).
+                </p>
+              </div>
+
+              {buildWhatsAppUrl(supportWaInput, 'Test message from GymCentric') && (
+                <div className="bg-[#060b0e] border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-2 text-xs">
+                  <span className="text-slate-400 truncate">
+                    Link: <span className="text-emerald-400">{buildWhatsAppUrl(supportWaInput)}</span>
+                  </span>
+                  <a
+                    href={buildWhatsAppUrl(supportWaInput, 'Test message from GymCentric')}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-400 hover:text-emerald-300 font-bold flex-shrink-0"
+                  >
+                    Test Chat
+                  </a>
+                </div>
+              )}
+
+              {settingsError && (
+                <p className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3 py-2">
+                  {settingsError}
+                </p>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsSupportWaModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-700 text-xs font-semibold text-slate-300 hover:bg-slate-800/60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingSettings}
+                  className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-[#060b0e] text-xs font-extrabold transition-colors"
+                >
+                  {isSavingSettings ? 'Saving...' : 'Save WhatsApp Number'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <BroadcastMessageModal
         isOpen={isBroadcastOpen}
