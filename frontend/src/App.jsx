@@ -43,7 +43,6 @@ const readStoredPlatformSettings = () => {
 
 export default function App() {
   const [isAdminRoute, setIsAdminRoute] = useState(isAdminPath);
-  const [adminRole, setAdminRole] = useState('superadmin'); // Used only inside /admin
   const [searchQuery, setSearchQuery] = useState('');
   const [dbConnected, setDbConnected] = useState(false);
 
@@ -317,7 +316,6 @@ export default function App() {
       // ignore
     }
     setAdminSession(session);
-    setAdminRole('superadmin');
     setSearchQuery('');
     await syncFromDatabase(token);
   };
@@ -360,10 +358,10 @@ export default function App() {
       );
     }
 
-    return adminRole === 'superadmin' ? (
+    return (
       <SuperAdminDashboard
-        activeRole={adminRole}
-        setActiveRole={setAdminRole}
+        activeRole="superadmin"
+        setActiveRole={() => {}}
         gyms={gyms}
         setGyms={setGyms}
         activeGym={activeGym}
@@ -380,30 +378,7 @@ export default function App() {
         platformSettings={platformSettings}
         onUpdatePlatformSettings={handleUpdatePlatformSettings}
         onOpenLogin={navigateToGymLogin}
-        allowPortalSwitch={true}
-        onLogout={handleAdminLogout}
-      />
-    ) : (
-      <GymDashboard
-        activeRole={adminRole}
-        setActiveRole={setAdminRole}
-        gyms={gyms}
-        gymProfile={activeGym}
-        onSelectGym={setActiveGymId}
-        searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
-        members={membersByGym[activeGym.id] || []}
-        setMembers={setScopedMembers}
-        gymPlans={plansByGym[activeGym.id] || []}
-        setGymPlans={setScopedPlans}
-        payments={memberPaymentsByGym[activeGym.id] || []}
-        setPayments={setScopedPayments}
-        ledgerEntries={gymLedgerByGym[activeGym.id] || []}
-        setLedgerEntries={setScopedLedger}
-        dbConnected={dbConnected}
-        platformSettings={platformSettings}
-        onOpenLogin={navigateToGymLogin}
-        allowPortalSwitch={true}
+        allowPortalSwitch={false}
         onLogout={handleAdminLogout}
       />
     );
