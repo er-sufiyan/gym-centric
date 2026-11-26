@@ -8,6 +8,7 @@ const {
   updateGymPlan,
   recordSaasPayment,
   deleteSaasPayment,
+  updatePlatformSettings,
   createMember,
   toggleMemberStatus,
   deleteMember,
@@ -32,6 +33,7 @@ router.delete('/superadmin/gyms/:gymId', protect, superAdminOnly, deleteGymOwner
 router.put('/superadmin/gyms/:gymId/plan', protect, superAdminOnly, updateGymPlan);
 router.post('/superadmin/payments', protect, superAdminOnly, recordSaasPayment);
 router.delete('/superadmin/payments/:paymentId', protect, superAdminOnly, deleteSaasPayment);
+router.put('/superadmin/settings', protect, superAdminOnly, updatePlatformSettings);
 
 // Gym Owner routes (scoped per authenticated gymId or SUPER_ADMIN)
 router.post('/gyms/:gymId/members', protect, authorizeGymScope, createMember);

@@ -31,6 +31,7 @@ import MonthlyResetBanner from '../../components/common/MonthlyResetBanner';
 import BroadcastMessageModal from '../../components/common/BroadcastMessageModal';
 import ConfirmDeleteModal from '../../components/common/ConfirmDeleteModal';
 import { getCurrentMonthSection } from '../../utils/billingCycle';
+import { buildWhatsAppUrl } from '../../utils/whatsapp';
 import {
   apiCreateMember,
   apiToggleMemberStatus,
@@ -57,6 +58,7 @@ export default function GymDashboard({
   ledgerEntries = payments,
   setLedgerEntries = setPayments,
   dbConnected = false,
+  platformSettings = {},
   onOpenLogin,
   allowPortalSwitch = true,
   onLogout
@@ -786,19 +788,47 @@ export default function GymDashboard({
             </span>
           </div>
           <div className="pt-2 space-y-2.5">
-            <a
-              href={`https://wa.me/919876543210?text=${encodeURIComponent(
+            {(() => {
+              const supportPhone =
+                platformSettings?.supportWhatsApp || import.meta.env.VITE_PLATFORM_WHATSAPP_NUMBER || '';
+              const supportWaUrl = buildWhatsAppUrl(
+                supportPhone,
                 `Hello GymCentric Team, I need help resolving the subscription payment for ${gymProfile.gymName} (${gymProfile.ownerName} • ${gymProfile.phone}).`
-              )}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full py-2.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-[#060b0e] font-extrabold rounded-xl text-xs transition-colors inline-flex items-center justify-center gap-2"
-            >
-              <MessageCircle className="w-4 h-4" /> Contact Platform Owner on WhatsApp
-            </a>
-            <p className="text-[11px] text-slate-500">
-              Already paid? Please contact the platform owner or support team to reactivate your gym workspace.
-            </p>
+              );
+
+              if (!supportWaUrl) {
+                return (
+                  <>
+                    <button
+                      type="button"
+                      disabled
+                      className="w-full py-2.5 px-4 bg-slate-800 text-slate-400 font-bold rounded-xl text-xs inline-flex items-center justify-center gap-2 cursor-not-allowed border border-slate-700"
+                    >
+                      <MessageCircle className="w-4 h-4" /> Platform WhatsApp Number Not Configured
+                    </button>
+                    <p className="text-[11px] text-amber-400/90">
+                      Platform owner WhatsApp number is not set yet. Configure it in Super Admin (/admin → Support WhatsApp).
+                    </p>
+                  </>
+                );
+              }
+
+              return (
+                <>
+                  <a
+                    href={supportWaUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-2.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-[#060b0e] font-extrabold rounded-xl text-xs transition-colors inline-flex items-center justify-center gap-2"
+                  >
+                    <MessageCircle className="w-4 h-4" /> Contact Platform Owner on WhatsApp
+                  </a>
+                  <p className="text-[11px] text-slate-500">
+                    Already paid? Please contact the platform owner or support team to reactivate your gym workspace.
+                  </p>
+                </>
+              );
+            })()}
           </div>
         </div>
       ) : (

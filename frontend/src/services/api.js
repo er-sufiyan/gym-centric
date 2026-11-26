@@ -95,6 +95,9 @@ export const apiRecordSaasPayment = (payload) =>
 export const apiDeleteSaasPayment = (paymentId) =>
   request(`/superadmin/payments/${paymentId}`, { method: 'DELETE' });
 
+export const apiUpdatePlatformSettings = (payload) =>
+  request('/superadmin/settings', { method: 'PUT', body: JSON.stringify(payload) });
+
 export const apiCreateMember = (gymId, payload) =>
   request(`/gyms/${gymId}/members`, { method: 'POST', body: JSON.stringify(payload) });
 

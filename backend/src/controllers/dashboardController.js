@@ -4,7 +4,14 @@ const Member = require('../models/Member');
 const Payment = require('../models/Payment');
 const SaasPayment = require('../models/SaasPayment');
 const GymLedgerEntry = require('../models/GymLedgerEntry');
+const PlatformSettings = require('../models/PlatformSettings');
 const { getEndOfMonthDate, runRetentionCleanup } = require('../services/cleanupService');
+
+async function getPlatformSettingsPayload() {
+  const settings = await PlatformSettings.findOne({ key: 'default' });
+  const supportWhatsApp = (settings?.supportWhatsApp || process.env.PLATFORM_WHATSAPP_NUMBER || '').trim();
+  return { supportWhatsApp };
+}
 
 function formatDisplayDate(date) {
   if (!date) return '';
@@ -123,6 +130,8 @@ exports.getBootstrapData = async (req, res) => {
   try {
     await runRetentionCleanup();
 
+    const platformSettings = await getPlatformSettingsPayload();
+
     // Unauthenticated visitors only confirm DB status without exposing tenant/member records
     if (!req.gym) {
       return res.status(200).json({
@@ -134,7 +143,8 @@ exports.getBootstrapData = async (req, res) => {
           membersByGym: {},
           memberPaymentsByGym: {},
           gymLedgerByGym: {},
-          saasPayments: []
+          saasPayments: [],
+          platformSettings
         }
       });
     }
@@ -205,7 +215,8 @@ exports.getBootstrapData = async (req, res) => {
         membersByGym,
         memberPaymentsByGym,
         gymLedgerByGym,
-        saasPayments
+        saasPayments,
+        platformSettings
       }
     });
   } catch (error) {
@@ -631,6 +642,37 @@ exports.recordMemberPayment = async (req, res) => {
       member: serializeMember(member),
       payment: serializePayment(payment),
       ledgerEntry: serializePayment(ledgerEntry)
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * PUT /api/dashboard/superadmin/settings
+ */
+exports.updatePlatformSettings = async (req, res) => {
+  try {
+    const rawPhone = String(req.body?.supportWhatsApp || '').trim();
+    const digits = rawPhone.replace(/\D/g, '');
+    if (rawPhone && digits.length < 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please enter a valid WhatsApp phone number (at least 10 digits with country code if outside India).'
+      });
+    }
+
+    const updated = await PlatformSettings.findOneAndUpdate(
+      { key: 'default' },
+      { key: 'default', supportWhatsApp: rawPhone },
+      { upsert: true, new: true }
+    );
+
+    return res.status(200).json({
+      success: true,
+      platformSettings: {
+        supportWhatsApp: updated.supportWhatsApp || ''
+      }
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
