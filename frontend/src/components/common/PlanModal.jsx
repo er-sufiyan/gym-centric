@@ -3,12 +3,14 @@ import { X, ShieldCheck, MessageCircle } from 'lucide-react';
 
 const PRICING = {
   BASE: {
+    '10_DAYS': 0,
     '1_MONTH': 2000,
     '3_MONTHS': 5000,
     '6_MONTHS': 10000,
     '1_YEAR': 18000
   },
   PRO: {
+    '10_DAYS': 0,
     '1_MONTH': 3000,
     '3_MONTHS': 8000,
     '6_MONTHS': 15000,
@@ -35,12 +37,14 @@ export default function PlanModal({ isOpen, onClose, gym, onSave }) {
   const pricing = PRICING;
 
   const durationLabels = {
+    '10_DAYS': '10 Days Free Trial',
     '1_MONTH': '1 Month Pass',
     '3_MONTHS': '3 Months Pass (11%-17% Off)',
     '6_MONTHS': '6 Months Pass (Popular)',
     '1_YEAR': '1 Year Pass (Best Value)'
   };
 
+  const isTrialDuration = selectedDuration === '10_DAYS';
   const amount = Math.max(0, Number(customAmount) || 0);
 
   const handleSelectPlan = (plan) => {
@@ -54,7 +58,7 @@ export default function PlanModal({ isOpen, onClose, gym, onSave }) {
   };
 
   const handleActivate = () => {
-    if (amount <= 0) return;
+    if (customAmount === '' || (amount <= 0 && !isTrialDuration)) return;
     onSave({
       gymId: gym.id,
       saasPlan: selectedPlan,
@@ -165,7 +169,7 @@ export default function PlanModal({ isOpen, onClose, gym, onSave }) {
             </label>
             <input
               type="number"
-              min="1"
+              min="0"
               required
               value={customAmount}
               onChange={(e) => setCustomAmount(e.target.value)}
@@ -220,10 +224,12 @@ export default function PlanModal({ isOpen, onClose, gym, onSave }) {
           {/* Action Button */}
           <button
             onClick={handleActivate}
-            disabled={amount <= 0}
+            disabled={customAmount === '' || (amount <= 0 && !isTrialDuration)}
             className="w-full py-3 bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 disabled:cursor-not-allowed text-[#060b0e] font-extrabold rounded-xl text-xs transition-colors shadow-lg shadow-cyan-500/20"
           >
-            Confirm &amp; Activate (Collect ₹{amount.toLocaleString()})
+            {amount === 0
+              ? 'Confirm & Activate (Free Trial ₹0)'
+              : `Confirm & Activate (Collect ₹${amount.toLocaleString()})`}
           </button>
         </div>
       </div>

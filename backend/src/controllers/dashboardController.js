@@ -286,14 +286,14 @@ exports.createGymOwner = async (req, res) => {
       return res.status(400).json({ success: false, message: 'A gym with this phone number already exists' });
     }
 
-    const durationMap = { '1_MONTH': 30, '3_MONTHS': 90, '6_MONTHS': 180, '1_YEAR': 365 };
+    const durationMap = { '10_DAYS': 10, '1_MONTH': 30, '3_MONTHS': 90, '6_MONTHS': 180, '1_YEAR': 365 };
     const priceMap = {
-      BASE: { '1_MONTH': 2000, '3_MONTHS': 5000, '6_MONTHS': 10000, '1_YEAR': 18000 },
-      PRO: { '1_MONTH': 3000, '3_MONTHS': 8000, '6_MONTHS': 15000, '1_YEAR': 26000 }
+      BASE: { '10_DAYS': 0, '1_MONTH': 2000, '3_MONTHS': 5000, '6_MONTHS': 10000, '1_YEAR': 18000 },
+      PRO: { '10_DAYS': 0, '1_MONTH': 3000, '3_MONTHS': 8000, '6_MONTHS': 15000, '1_YEAR': 26000 }
     };
 
     const days = durationMap[duration] || 30;
-    const amount = priceMap[saasPlan]?.[duration] || 2000;
+    const amount = priceMap[saasPlan]?.[duration] ?? 2000;
     const validUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 
     const gym = await Gym.create({
@@ -412,7 +412,7 @@ exports.updateGymPlan = async (req, res) => {
     const gym = await Gym.findById(req.params.gymId);
     if (!gym) return res.status(404).json({ success: false, message: 'Gym not found' });
 
-    const durationMap = { '1_MONTH': 30, '3_MONTHS': 90, '6_MONTHS': 180, '1_YEAR': 365 };
+    const durationMap = { '10_DAYS': 10, '1_MONTH': 30, '3_MONTHS': 90, '6_MONTHS': 180, '1_YEAR': 365 };
     const days = durationMap[duration] || 30;
     const nextExpiry = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 

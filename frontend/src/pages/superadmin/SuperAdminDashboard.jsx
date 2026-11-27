@@ -454,14 +454,14 @@ export default function SuperAdminDashboard({
       }
     }
 
-    const durationMap = { '1_MONTH': 30, '3_MONTHS': 90, '6_MONTHS': 180, '1_YEAR': 365 };
+    const durationMap = { '10_DAYS': 10, '1_MONTH': 30, '3_MONTHS': 90, '6_MONTHS': 180, '1_YEAR': 365 };
     const priceMap = {
-      BASE: { '1_MONTH': 2000, '3_MONTHS': 5000, '6_MONTHS': 10000, '1_YEAR': 18000 },
-      PRO: { '1_MONTH': 3000, '3_MONTHS': 8000, '6_MONTHS': 15000, '1_YEAR': 26000 }
+      BASE: { '10_DAYS': 0, '1_MONTH': 2000, '3_MONTHS': 5000, '6_MONTHS': 10000, '1_YEAR': 18000 },
+      PRO: { '10_DAYS': 0, '1_MONTH': 3000, '3_MONTHS': 8000, '6_MONTHS': 15000, '1_YEAR': 26000 }
     };
 
     const days = durationMap[newGymForm.duration] || 30;
-    const amount = priceMap[newGymForm.saasPlan][newGymForm.duration];
+    const amount = priceMap[newGymForm.saasPlan]?.[newGymForm.duration] ?? 2000;
     const expiry = new Date();
     expiry.setDate(expiry.getDate() + days);
 
@@ -1386,6 +1386,7 @@ export default function SuperAdminDashboard({
                     onChange={(e) => setNewGymForm({ ...newGymForm, duration: e.target.value })}
                     className="w-full bg-[#060b0e] border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
                   >
+                    <option value="10_DAYS">10 Days Trial (Free)</option>
                     <option value="1_MONTH">1 Month</option>
                     <option value="3_MONTHS">3 Months</option>
                     <option value="6_MONTHS">6 Months</option>
