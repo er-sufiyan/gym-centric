@@ -1,28 +1,38 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, ShieldCheck, MessageCircle } from 'lucide-react';
 
-export default function PlanModal({ isOpen, onClose, gym, onSave }) {
-  if (!isOpen || !gym) return null;
+const PRICING = {
+  BASE: {
+    '1_MONTH': 2000,
+    '3_MONTHS': 5000,
+    '6_MONTHS': 10000,
+    '1_YEAR': 18000
+  },
+  PRO: {
+    '1_MONTH': 3000,
+    '3_MONTHS': 8000,
+    '6_MONTHS': 15000,
+    '1_YEAR': 26000
+  }
+};
 
-  const [selectedPlan, setSelectedPlan] = useState(gym.saasPlan || 'PRO');
+export default function PlanModal({ isOpen, onClose, gym, onSave }) {
+  const [selectedPlan, setSelectedPlan] = useState(gym?.saasPlan || 'PRO');
   const [selectedDuration, setSelectedDuration] = useState('1_YEAR');
+  const [customAmount, setCustomAmount] = useState(String(PRICING[gym?.saasPlan || 'PRO']['1_YEAR']));
   const [paymentMode, setPaymentMode] = useState('UPI');
   const [sendWhatsAppReceipt, setSendWhatsAppReceipt] = useState(true);
 
-  const pricing = {
-    BASE: {
-      '1_MONTH': 2000,
-      '3_MONTHS': 5000,
-      '6_MONTHS': 10000,
-      '1_YEAR': 18000
-    },
-    PRO: {
-      '1_MONTH': 3000,
-      '3_MONTHS': 8000,
-      '6_MONTHS': 15000,
-      '1_YEAR': 26000
+  useEffect(() => {
+    if (gym?.saasPlan) {
+      setSelectedPlan(gym.saasPlan);
+      setCustomAmount(String(PRICING[gym.saasPlan]?.[selectedDuration] ?? 2000));
     }
-  };
+  }, [gym?.id, gym?.saasPlan, isOpen]);
+
+  if (!isOpen || !gym) return null;
+
+  const pricing = PRICING;
 
   const durationLabels = {
     '1_MONTH': '1 Month Pass',
@@ -31,9 +41,20 @@ export default function PlanModal({ isOpen, onClose, gym, onSave }) {
     '1_YEAR': '1 Year Pass (Best Value)'
   };
 
-  const amount = pricing[selectedPlan][selectedDuration];
+  const amount = Math.max(0, Number(customAmount) || 0);
+
+  const handleSelectPlan = (plan) => {
+    setSelectedPlan(plan);
+    setCustomAmount(String(pricing[plan][selectedDuration]));
+  };
+
+  const handleSelectDuration = (dur) => {
+    setSelectedDuration(dur);
+    setCustomAmount(String(pricing[selectedPlan][dur]));
+  };
 
   const handleActivate = () => {
+    if (amount <= 0) return;
     onSave({
       gymId: gym.id,
       saasPlan: selectedPlan,
@@ -86,7 +107,7 @@ export default function PlanModal({ isOpen, onClose, gym, onSave }) {
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => setSelectedPlan('BASE')}
+                onClick={() => handleSelectPlan('BASE')}
                 className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all ${
                   selectedPlan === 'BASE'
                     ? 'border-cyan-500 bg-cyan-500/10 text-cyan-300'
@@ -99,7 +120,7 @@ export default function PlanModal({ isOpen, onClose, gym, onSave }) {
 
               <button
                 type="button"
-                onClick={() => setSelectedPlan('PRO')}
+                onClick={() => handleSelectPlan('PRO')}
                 className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all ${
                   selectedPlan === 'PRO'
                     ? 'border-cyan-500 bg-cyan-500/10 text-cyan-300'
@@ -121,7 +142,7 @@ export default function PlanModal({ isOpen, onClose, gym, onSave }) {
               {Object.keys(pricing[selectedPlan]).map((dur) => (
                 <label
                   key={dur}
-                  onClick={() => setSelectedDuration(dur)}
+                  onClick={() => handleSelectDuration(dur)}
                   className={`flex items-center justify-between p-2.5 rounded-xl border cursor-pointer text-xs transition-all ${
                     selectedDuration === dur
                       ? 'border-cyan-500/50 bg-cyan-500/10 text-white'
@@ -135,6 +156,22 @@ export default function PlanModal({ isOpen, onClose, gym, onSave }) {
                 </label>
               ))}
             </div>
+          </div>
+
+          {/* Manual Amount Input */}
+          <div>
+            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-1.5">
+              Collect Amount (₹) <span className="text-[10px] font-normal text-slate-500">(Auto-filled, editable)</span>
+            </label>
+            <input
+              type="number"
+              min="1"
+              required
+              value={customAmount}
+              onChange={(e) => setCustomAmount(e.target.value)}
+              placeholder="Enter amount"
+              className="w-full bg-[#060b0e] border border-slate-800 rounded-xl px-3.5 py-2 text-xs font-bold text-cyan-300 focus:outline-none focus:border-cyan-500"
+            />
           </div>
 
           {/* Payment Method */}
@@ -183,7 +220,8 @@ export default function PlanModal({ isOpen, onClose, gym, onSave }) {
           {/* Action Button */}
           <button
             onClick={handleActivate}
-            className="w-full py-3 bg-cyan-400 hover:bg-cyan-300 text-[#060b0e] font-extrabold rounded-xl text-xs transition-colors shadow-lg shadow-cyan-500/20"
+            disabled={amount <= 0}
+            className="w-full py-3 bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 disabled:cursor-not-allowed text-[#060b0e] font-extrabold rounded-xl text-xs transition-colors shadow-lg shadow-cyan-500/20"
           >
             Confirm &amp; Activate (Collect ₹{amount.toLocaleString()})
           </button>
