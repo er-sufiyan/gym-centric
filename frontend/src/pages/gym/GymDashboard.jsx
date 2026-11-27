@@ -76,8 +76,6 @@ export default function GymDashboard({
   const [selectedDetailMember, setSelectedDetailMember] = useState(null);
   const [memberToRemove, setMemberToRemove] = useState(null);
   const [receiptToSend, setReceiptToSend] = useState(null);
-  const [sendWaReceiptOnPay, setSendWaReceiptOnPay] = useState(true);
-  const [sendWaReceiptOnAdd, setSendWaReceiptOnAdd] = useState(true);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -385,24 +383,7 @@ export default function GymDashboard({
           planPrice: fallbackPlan.price,
           photoUrl: ''
         });
-        showToast(`Member "${res.member.name}" (#${res.member.rollNo}) saved successfully!`);
-        if (sendWaReceiptOnAdd) {
-          setReceiptToSend({
-            type: isProPlan ? 'MEMBER_WELCOME' : 'MEMBER',
-            receiptNo: res.payment.receiptNo,
-            gymName: gymProfile?.gymName || 'GymCentric Gym',
-            recipientName: res.member.name,
-            recipientPhone: res.member.phone,
-            rollNo: res.member.rollNo,
-            shift: res.member.shift,
-            shiftTime: res.member.shiftTime,
-            planName: res.member.planName,
-            amount: res.payment.amount,
-            mode: res.payment.mode,
-            date: res.payment.date,
-            validUntil: res.member.expiryDate
-          });
-        }
+        showToast(`Member "${res.member.name}" (#${res.member.rollNo}) saved & WhatsApp notification sent automatically!`);
         return;
       } catch (err) {
         const msg = err?.message || 'Failed to save member. Please try again.';
@@ -477,23 +458,6 @@ export default function GymDashboard({
       photoUrl: ''
     });
     showToast(`${created.name} (#${created.rollNo}) registered as ACTIVE member!`);
-    if (sendWaReceiptOnAdd) {
-      setReceiptToSend({
-        type: isProPlan ? 'MEMBER_WELCOME' : 'MEMBER',
-        receiptNo,
-        gymName: gymProfile?.gymName || 'GymCentric Gym',
-        recipientName: created.name,
-        recipientPhone: created.phone,
-        rollNo: created.rollNo,
-        shift: created.shift,
-        shiftTime: created.shiftTime,
-        planName: created.planName,
-        amount: initialFee.amount,
-        mode: initialFee.mode,
-        date: initialFee.date,
-        validUntil: created.expiryDate
-      });
-    }
   };
 
   const openPayForMember = (member) => {
@@ -529,24 +493,7 @@ export default function GymDashboard({
         setLedgerEntries((prev) => [res.ledgerEntry || res.payment, ...prev]);
         setMembers((prev) => prev.map((m) => (m.id === targetMember.id ? res.member : m)));
         setIsPaymentModalOpen(false);
-        showToast(`₹${res.payment.amount.toLocaleString()} (${res.payment.mode}) saved to DB!`);
-        if (sendWaReceiptOnPay) {
-          setReceiptToSend({
-            type: 'MEMBER',
-            receiptNo: res.payment.receiptNo,
-            gymName: gymProfile?.gymName || 'GymCentric Gym',
-            recipientName: res.member.name,
-            recipientPhone: res.member.phone,
-            rollNo: res.member.rollNo,
-            shift: res.member.shift,
-            shiftTime: res.member.shiftTime,
-            planName: res.payment.planName,
-            amount: res.payment.amount,
-            mode: res.payment.mode,
-            date: res.payment.date,
-            validUntil: res.member.expiryDate
-          });
-        }
+        showToast(`₹${res.payment.amount.toLocaleString()} (${res.payment.mode}) saved & WhatsApp receipt sent automatically!`);
         return;
       } catch (err) {
         showToast(err.message);
@@ -595,23 +542,6 @@ export default function GymDashboard({
 
     setIsPaymentModalOpen(false);
     showToast(`₹${Number(payForm.amount).toLocaleString()} (${payForm.mode}) saved — ${targetMember.name} is ACTIVE.`);
-    if (sendWaReceiptOnPay) {
-      setReceiptToSend({
-        type: 'MEMBER',
-        receiptNo,
-        gymName: gymProfile?.gymName || 'GymCentric Gym',
-        recipientName: targetMember.name,
-        recipientPhone: targetMember.phone,
-        rollNo: targetMember.rollNo,
-        shift: targetMember.shift,
-        shiftTime: targetMember.shiftTime,
-        planName: payForm.notes,
-        amount: Number(payForm.amount),
-        mode: payForm.mode,
-        date: payDate,
-        validUntil: nextExpiry
-      });
-    }
   };
 
   const openMemberReceipt = (payment, explicitMember) => {
@@ -1568,21 +1498,13 @@ export default function GymDashboard({
                 </div>
               </div>
 
-              <label className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-[#060b0e] border border-emerald-500/30 cursor-pointer">
-                <span className="flex items-center gap-2 text-xs text-slate-200 font-semibold">
-                  <MessageCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                  <span>
-                    Send Receipt via WhatsApp to{' '}
-                    {members.find((m) => m.id === payForm.memberId)?.name || 'Selected Member'}
-                  </span>
+              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-[#060b0e] border border-emerald-500/30 text-xs text-emerald-300 font-semibold">
+                <MessageCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                <span>
+                  WhatsApp receipt will be sent automatically to{' '}
+                  {members.find((m) => m.id === payForm.memberId)?.name || 'Selected Member'} (required to complete save).
                 </span>
-                <input
-                  type="checkbox"
-                  checked={sendWaReceiptOnPay}
-                  onChange={(e) => setSendWaReceiptOnPay(e.target.checked)}
-                  className="accent-emerald-400 w-4 h-4 rounded cursor-pointer"
-                />
-              </label>
+              </div>
 
               <div className="flex gap-2 pt-2">
                 <button
@@ -1824,22 +1746,14 @@ export default function GymDashboard({
                 </div>
               </div>
 
-              <label className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-[#060b0e] border border-emerald-500/30 cursor-pointer">
-                <span className="flex items-center gap-2 text-xs text-slate-200 font-semibold">
-                  <MessageCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                  <span>
-                    {isProPlan
-                      ? 'Send Welcome Greeting (Plan, Timing & ID) via WhatsApp'
-                      : 'Send Fee Payment Receipt via WhatsApp'}
-                  </span>
+              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-[#060b0e] border border-emerald-500/30 text-xs text-emerald-300 font-semibold">
+                <MessageCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                <span>
+                  {isProPlan
+                    ? 'Welcome greeting & receipt will be sent automatically via WhatsApp (required to save).'
+                    : 'Fee payment receipt will be sent automatically via WhatsApp (required to save).'}
                 </span>
-                <input
-                  type="checkbox"
-                  checked={sendWaReceiptOnAdd}
-                  onChange={(e) => setSendWaReceiptOnAdd(e.target.checked)}
-                  className="accent-emerald-400 w-4 h-4 rounded cursor-pointer"
-                />
-              </label>
+              </div>
 
               {addMemberError && (
                 <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs font-semibold">

@@ -524,9 +524,42 @@ exports.createMember = async (req, res) => {
     const resolvedPlanPrice = Number(planPrice) > 0 ? Number(planPrice) : 1200;
     const resolvedDurationDays = Number(planDurationDays) > 0 ? Number(planDurationDays) : 30;
 
+    const existingRoll = await Member.findOne({ gymId, rollNo: rollNo.trim() }).select('_id');
+    if (existingRoll) {
+      return res.status(400).json({
+        success: false,
+        message: `Roll No. #${rollNo.trim()} already exists in this gym. Please use a different Roll No.`
+      });
+    }
+
     const expiryDate = new Date(Date.now() + resolvedDurationDays * 24 * 60 * 60 * 1000);
     const shiftTime = '';
     const now = new Date();
+    const receiptNo = `RCP-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const gym = await Gym.findById(gymId).select('gymName');
+    const notif = await sendBillingNotification({
+      type: 'MEMBER_WELCOME',
+      phone: phone.trim(),
+      gymName: gym?.gymName || 'GymCentric',
+      memberName: name.trim(),
+      rollNo: rollNo.trim(),
+      planName: resolvedPlanName,
+      amount: resolvedPlanPrice,
+      mode: 'CASH',
+      date: formatDisplayDate(now),
+      validUntil: formatDisplayDate(expiryDate),
+      receiptNo,
+      shift
+    });
+
+    if (!notif.success) {
+      const status = notif.whatsapp?.mode === 'INVALID_PHONE' ? 400 : 502;
+      return res.status(status).json({
+        success: false,
+        message: `Member not saved: WhatsApp notification failed (${notif.whatsapp?.error || 'Dispatch failed'}).`
+      });
+    }
 
     const member = await Member.create({
       gymId,
@@ -549,7 +582,6 @@ exports.createMember = async (req, res) => {
       uniqueQrCode: `GYM-${gymId.slice(-4)}-${rollNo.trim()}-${Date.now()}`
     });
 
-    const receiptNo = `RCP-${Math.floor(1000 + Math.random() * 9000)}`;
     const [payment, ledgerEntry] = await Promise.all([
       Payment.create({
         gymId,
@@ -577,31 +609,12 @@ exports.createMember = async (req, res) => {
       })
     ]);
 
-    const serializedMember = serializeMember(member);
-    const serializedPayment = serializePayment(payment);
-
-    // Auto-send billing notification to the new member (fire-and-forget)
-    const gym = await Gym.findById(gymId).select('gymName');
-    sendBillingNotification({
-      type: 'MEMBER_WELCOME',
-      phone: member.phone,
-      gymName: gym?.gymName || 'GymCentric',
-      memberName: member.name,
-      rollNo: member.rollNo,
-      planName: member.planName,
-      amount: resolvedPlanPrice,
-      mode: 'CASH',
-      date: serializedPayment.date,
-      validUntil: serializedMember.expiryDate,
-      receiptNo: receiptNo,
-      shift: member.shift
-    }).catch((err) => console.error('[Auto-Notify New Member Error]:', err.message));
-
     return res.status(201).json({
       success: true,
-      member: serializedMember,
-      payment: serializedPayment,
-      ledgerEntry: serializePayment(ledgerEntry)
+      member: serializeMember(member),
+      payment: serializePayment(payment),
+      ledgerEntry: serializePayment(ledgerEntry),
+      notification: notif.whatsapp
     });
   } catch (error) {
     if (error?.code === 11000) {
@@ -622,35 +635,48 @@ exports.toggleMemberStatus = async (req, res) => {
     const member = await Member.findOne({ _id: req.params.memberId, gymId: req.params.gymId });
     if (!member) return res.status(404).json({ success: false, message: 'Member not found' });
 
-    member.status = member.status === 'ACTIVE' ? 'EXPIRED' : 'ACTIVE';
-    if (member.status === 'ACTIVE') {
-      member.lastInteractionDate = new Date();
-      member.expiredAt = null;
-      member.lastReminderMilestone = null;
-      member.lastReminderSentAt = null;
-      if (new Date(member.expiryDate) < new Date()) {
-        member.expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-      }
-    } else {
-      member.expiredAt = new Date();
+    const nextStatus = member.status === 'ACTIVE' ? 'EXPIRED' : 'ACTIVE';
+    let nextExpiryDate = member.expiryDate;
+    if (nextStatus === 'ACTIVE' && new Date(member.expiryDate) < new Date()) {
+      nextExpiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     }
-    await member.save();
 
-    const serializedMember = serializeMember(member);
-
-    // Auto-send billing notification on status change (fire-and-forget)
     const gym = await Gym.findById(req.params.gymId).select('gymName');
-    sendBillingNotification({
-      type: member.status === 'ACTIVE' ? 'STATUS_CHANGE_ACTIVE' : 'STATUS_CHANGE_EXPIRED',
+    const notif = await sendBillingNotification({
+      type: nextStatus === 'ACTIVE' ? 'STATUS_CHANGE_ACTIVE' : 'STATUS_CHANGE_EXPIRED',
       phone: member.phone,
       gymName: gym?.gymName || 'GymCentric',
       memberName: member.name,
       rollNo: member.rollNo,
       planName: member.planName,
-      validUntil: serializedMember.expiryDate
-    }).catch((err) => console.error('[Auto-Notify Status Change Error]:', err.message));
+      validUntil: formatDisplayDate(nextExpiryDate)
+    });
 
-    return res.status(200).json({ success: true, member: serializedMember });
+    if (!notif.success) {
+      const status = notif.whatsapp?.mode === 'INVALID_PHONE' ? 400 : 502;
+      return res.status(status).json({
+        success: false,
+        message: `Status not updated: WhatsApp notification failed (${notif.whatsapp?.error || 'Dispatch failed'}).`
+      });
+    }
+
+    member.status = nextStatus;
+    if (member.status === 'ACTIVE') {
+      member.lastInteractionDate = new Date();
+      member.expiredAt = null;
+      member.lastReminderMilestone = null;
+      member.lastReminderSentAt = null;
+      member.expiryDate = nextExpiryDate;
+    } else {
+      member.expiredAt = new Date();
+    }
+    await member.save();
+
+    return res.status(200).json({
+      success: true,
+      member: serializeMember(member),
+      notification: notif.whatsapp
+    });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -724,6 +750,31 @@ exports.recordMemberPayment = async (req, res) => {
 
     const now = new Date();
     const nextExpiry = new Date(Date.now() + Number(extendDays) * 24 * 60 * 60 * 1000);
+    const receiptNo = `RCP-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const gym = await Gym.findById(gymId).select('gymName');
+    const notif = await sendBillingNotification({
+      type: 'MEMBER',
+      phone: member.phone,
+      gymName: gym?.gymName || 'GymCentric',
+      memberName: member.name,
+      rollNo: member.rollNo,
+      planName: notes,
+      amount: Number(amount),
+      mode,
+      date: formatDisplayDate(now),
+      validUntil: formatDisplayDate(nextExpiry),
+      receiptNo
+    });
+
+    if (!notif.success) {
+      const status = notif.whatsapp?.mode === 'INVALID_PHONE' ? 400 : 502;
+      return res.status(status).json({
+        success: false,
+        message: `Payment not saved: WhatsApp notification failed (${notif.whatsapp?.error || 'Dispatch failed'}).`
+      });
+    }
+
     member.status = 'ACTIVE';
     member.expiredAt = null;
     member.lastReminderMilestone = null;
@@ -735,7 +786,6 @@ exports.recordMemberPayment = async (req, res) => {
     member.totalCheckIns = (member.totalCheckIns || 0) + 1;
     await member.save();
 
-    const receiptNo = `RCP-${Math.floor(1000 + Math.random() * 9000)}`;
     const [payment, ledgerEntry] = await Promise.all([
       Payment.create({
         gymId,
@@ -763,30 +813,12 @@ exports.recordMemberPayment = async (req, res) => {
       })
     ]);
 
-    const serializedMember = serializeMember(member);
-    const serializedPayment = serializePayment(payment);
-
-    // Auto-send billing notification for fee payment (fire-and-forget)
-    const gym = await Gym.findById(gymId).select('gymName');
-    sendBillingNotification({
-      type: 'MEMBER',
-      phone: member.phone,
-      gymName: gym?.gymName || 'GymCentric',
-      memberName: member.name,
-      rollNo: member.rollNo,
-      planName: notes,
-      amount: Number(amount),
-      mode,
-      date: serializedPayment.date,
-      validUntil: serializedMember.expiryDate,
-      receiptNo: receiptNo
-    }).catch((err) => console.error('[Auto-Notify Payment Error]:', err.message));
-
     return res.status(201).json({
       success: true,
-      member: serializedMember,
-      payment: serializedPayment,
-      ledgerEntry: serializePayment(ledgerEntry)
+      member: serializeMember(member),
+      payment: serializePayment(payment),
+      ledgerEntry: serializePayment(ledgerEntry),
+      notification: notif.whatsapp
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
