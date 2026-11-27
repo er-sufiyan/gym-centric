@@ -288,12 +288,12 @@ exports.createGymOwner = async (req, res) => {
 
     const durationMap = { '1_MONTH': 30, '3_MONTHS': 90, '6_MONTHS': 180, '1_YEAR': 365 };
     const priceMap = {
-      BASE: { '1_MONTH': 3000, '3_MONTHS': 8000, '6_MONTHS': 15000, '1_YEAR': 26000 },
-      PRO: { '1_MONTH': 5000, '3_MONTHS': 12500, '6_MONTHS': 22000, '1_YEAR': 35000 }
+      BASE: { '1_MONTH': 2000, '3_MONTHS': 5000, '6_MONTHS': 10000, '1_YEAR': 18000 },
+      PRO: { '1_MONTH': 3000, '3_MONTHS': 8000, '6_MONTHS': 15000, '1_YEAR': 26000 }
     };
 
     const days = durationMap[duration] || 30;
-    const amount = priceMap[saasPlan]?.[duration] || 3000;
+    const amount = priceMap[saasPlan]?.[duration] || 2000;
     const validUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 
     const gym = await Gym.create({
@@ -1061,6 +1061,8 @@ exports.generateReceiptPdfFromBody = async (req, res) => {
     const {
       receiptNo,
       gymName,
+      gymId,
+      ownerName,
       memberName,
       rollNo,
       phone,
@@ -1083,6 +1085,8 @@ exports.generateReceiptPdfFromBody = async (req, res) => {
     const pdfBuffer = await generateReceiptPdf({
       receiptNo,
       gymName: gymName || 'GymCentric',
+      gymId: gymId || '',
+      ownerName: ownerName || memberName,
       memberName,
       rollNo: rollNo || '',
       phone: phone || '',
@@ -1197,6 +1201,8 @@ exports.sendReceiptEmail = async (req, res) => {
       email,
       receiptNo,
       gymName,
+      gymId,
+      ownerName,
       memberName,
       rollNo,
       phone,
@@ -1220,6 +1226,8 @@ exports.sendReceiptEmail = async (req, res) => {
     const pdfBuffer = await generateReceiptPdf({
       receiptNo,
       gymName: gymName || 'GymCentric',
+      gymId: gymId || '',
+      ownerName: ownerName || memberName,
       memberName,
       rollNo: rollNo || '',
       phone: phone || '',

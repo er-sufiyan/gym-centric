@@ -128,6 +128,8 @@ export default function WhatsAppReceiptModal({
       const blobUrl = await generateReceiptPdfFromData(gymId, {
         receiptNo: receiptId,
         gymName: receipt.gymName,
+        gymId: receipt.gymId || '',
+        ownerName: receipt.recipientName,
         memberName: receipt.recipientName,
         rollNo: receipt.rollNo || '',
         phone: receipt.recipientPhone || '',
@@ -166,6 +168,8 @@ export default function WhatsAppReceiptModal({
       const blob = await fetchReceiptPdfBlob(gymId, {
         receiptNo: receiptId,
         gymName: receipt.gymName,
+        gymId: receipt.gymId || '',
+        ownerName: receipt.recipientName,
         memberName: receipt.recipientName,
         rollNo: receipt.rollNo || '',
         phone: receipt.recipientPhone || '',
@@ -225,6 +229,8 @@ export default function WhatsAppReceiptModal({
         email: receipt.recipientEmail,
         receiptNo: receiptId,
         gymName: receipt.gymName,
+        gymId: receipt.gymId || '',
+        ownerName: receipt.recipientName,
         memberName: receipt.recipientName,
         rollNo: receipt.rollNo || '',
         phone: receipt.recipientPhone || '',

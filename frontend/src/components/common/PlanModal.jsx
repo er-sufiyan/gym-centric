@@ -11,16 +11,16 @@ export default function PlanModal({ isOpen, onClose, gym, onSave }) {
 
   const pricing = {
     BASE: {
+      '1_MONTH': 2000,
+      '3_MONTHS': 5000,
+      '6_MONTHS': 10000,
+      '1_YEAR': 18000
+    },
+    PRO: {
       '1_MONTH': 3000,
       '3_MONTHS': 8000,
       '6_MONTHS': 15000,
       '1_YEAR': 26000
-    },
-    PRO: {
-      '1_MONTH': 5000,
-      '3_MONTHS': 12500,
-      '6_MONTHS': 22000,
-      '1_YEAR': 35000
     }
   };
 

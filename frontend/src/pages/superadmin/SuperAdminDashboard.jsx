@@ -304,10 +304,12 @@ export default function SuperAdminDashboard({
     if (sendWaOnManual) {
       setReceiptToSend({
         type: 'SAAS',
+        gymId: targetGym.id,
         invoiceNo: newTx.invoiceNo,
         gymName: targetGym.gymName,
         recipientName: targetGym.ownerName,
         recipientPhone: targetGym.phone,
+        recipientEmail: targetGym.email || '',
         planName: newTx.notes,
         amount: newTx.amount,
         mode: newTx.mode,
@@ -333,6 +335,7 @@ export default function SuperAdminDashboard({
             gymName: res.gym.gymName,
             recipientName: res.gym.ownerName,
             recipientPhone: res.gym.phone,
+            recipientEmail: res.gym.email || '',
             planName: res.payment.notes,
             amount: res.payment.amount,
             mode: res.payment.mode,
@@ -391,10 +394,12 @@ export default function SuperAdminDashboard({
     if (sendWhatsAppReceipt && targetGym) {
       setReceiptToSend({
         type: 'SAAS',
+        gymId: targetGym.id,
         invoiceNo,
         gymName: targetGym.gymName,
         recipientName: targetGym.ownerName,
         recipientPhone: targetGym.phone,
+        recipientEmail: targetGym.email || '',
         planName: planLabel,
         amount: Number(amount),
         mode: paymentMode,
@@ -433,6 +438,7 @@ export default function SuperAdminDashboard({
             gymName: res.gym.gymName,
             recipientName: res.gym.ownerName,
             recipientPhone: res.gym.phone,
+            recipientEmail: res.gym.email || '',
             address: res.gym.address,
             planName: res.initialPayment.notes,
             amount: res.initialPayment.amount,
@@ -450,8 +456,8 @@ export default function SuperAdminDashboard({
 
     const durationMap = { '1_MONTH': 30, '3_MONTHS': 90, '6_MONTHS': 180, '1_YEAR': 365 };
     const priceMap = {
-      BASE: { '1_MONTH': 3000, '3_MONTHS': 8000, '6_MONTHS': 15000, '1_YEAR': 26000 },
-      PRO: { '1_MONTH': 5000, '3_MONTHS': 12500, '6_MONTHS': 22000, '1_YEAR': 35000 }
+      BASE: { '1_MONTH': 2000, '3_MONTHS': 5000, '6_MONTHS': 10000, '1_YEAR': 18000 },
+      PRO: { '1_MONTH': 3000, '3_MONTHS': 8000, '6_MONTHS': 15000, '1_YEAR': 26000 }
     };
 
     const days = durationMap[newGymForm.duration] || 30;
@@ -518,6 +524,7 @@ export default function SuperAdminDashboard({
         gymName: createdGym.gymName,
         recipientName: createdGym.ownerName,
         recipientPhone: createdGym.phone,
+        recipientEmail: createdGym.email || '',
         address: createdGym.address,
         planName: initialPayment.notes,
         amount: initialPayment.amount,
@@ -1116,10 +1123,12 @@ export default function SuperAdminDashboard({
                         const matchedGym = gyms.find((g) => g.id === p.gymId || g.gymName === p.gymName);
                         setReceiptToSend({
                           type: 'SAAS',
+                          gymId: matchedGym?.id || p.gymId,
                           invoiceNo: p.invoiceNo,
                           gymName: p.gymName,
                           recipientName: p.ownerName,
                           recipientPhone: matchedGym?.phone || '',
+                          recipientEmail: matchedGym?.email || '',
                           planName: p.notes,
                           amount: p.amount,
                           mode: p.mode,
@@ -1447,6 +1456,7 @@ export default function SuperAdminDashboard({
             gymName: p.gymName,
             recipientName: p.ownerName,
             recipientPhone: gym.phone,
+            recipientEmail: gym.email || '',
             planName: p.notes,
             amount: p.amount,
             mode: p.mode,
@@ -1467,6 +1477,7 @@ export default function SuperAdminDashboard({
         onClose={() => setReceiptToSend(null)}
         receipt={receiptToSend}
         onSent={(msg) => showToast(msg)}
+        gymId={receiptToSend?.gymId || gyms[0]?.id}
       />
 
       {isSupportWaModalOpen && (
