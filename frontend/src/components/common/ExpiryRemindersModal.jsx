@@ -21,9 +21,11 @@ export default function ExpiryRemindersModal({
     return reminders.reduce(
       (acc, r) => {
         acc[r.milestone] = (acc[r.milestone] || 0) + 1;
+        if (r.alreadySent) acc.SENT += 1;
+        else acc.NOT_SENT += 1;
         return acc;
       },
-      { '1D': 0, '2D': 0, '3D': 0, EXPIRED: 0 }
+      { '1D': 0, '2D': 0, '3D': 0, EXPIRED: 0, SENT: 0, NOT_SENT: 0 }
     );
   }, [reminders]);
 
@@ -62,24 +64,34 @@ export default function ExpiryRemindersModal({
         </div>
 
         {/* Filter Pills */}
-        <div className="px-6 py-3 border-b border-slate-800/80 bg-[#060b0e]/60 flex items-center gap-1.5 flex-wrap">
-          {FILTERS.map((f) => {
-            const count = f.id === 'ALL' ? reminders.length : counts[f.id] || 0;
-            return (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => setFilter(f.id)}
-                className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-colors ${
-                  filter === f.id
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                    : 'bg-[#0b1418] text-slate-400 hover:text-white border border-slate-800'
-                }`}
-              >
-                {f.label} ({count})
-              </button>
-            );
-          })}
+        <div className="px-6 py-3 border-b border-slate-800/80 bg-[#060b0e]/60 flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {FILTERS.map((f) => {
+              const count = f.id === 'ALL' ? reminders.length : counts[f.id] || 0;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setFilter(f.id)}
+                  className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-colors ${
+                    filter === f.id
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                      : 'bg-[#0b1418] text-slate-400 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  {f.label} ({count})
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-2 text-[10px] font-bold">
+            <span className="px-2 py-1 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/30">
+              Not Sent: {counts.NOT_SENT}
+            </span>
+            <span className="px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+              Sent: {counts.SENT}
+            </span>
+          </div>
         </div>
 
         {/* List */}
@@ -118,9 +130,14 @@ export default function ExpiryRemindersModal({
                         )}
                         {badge}
                       </span>
-                      {alreadySent && (
+                      {alreadySent ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
                           <CheckCircle2 className="w-3 h-3" /> Sent ({milestone})
+                          {member.lastReminderSentAt ? ` • ${member.lastReminderSentAt}` : ''}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                          <Clock className="w-3 h-3" /> Not Sent Yet
                         </span>
                       )}
                     </div>

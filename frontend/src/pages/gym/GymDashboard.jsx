@@ -789,6 +789,28 @@ export default function GymDashboard({
                         Least Interact
                       </span>
                     )}
+
+                    {(() => {
+                      const reminderInfo = getMemberExpiryReminder(member, gymProfile?.gymName || 'GymCentric');
+                      if (!reminderInfo) return null;
+                      return reminderInfo.alreadySent ? (
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                          title={`Reminder (${reminderInfo.milestone}) sent${member.lastReminderSentAt ? ` on ${member.lastReminderSentAt}` : ''}`}
+                        >
+                          <CheckCircle2 className="w-3 h-3" />
+                          Reminder Sent{member.lastReminderSentAt ? ` (${member.lastReminderSentAt})` : ''}
+                        </span>
+                      ) : (
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30"
+                          title={`Expiry reminder (${reminderInfo.badge}) not sent yet`}
+                        >
+                          <BellRing className="w-3 h-3" />
+                          Reminder Not Sent
+                        </span>
+                      );
+                    })()}
                   </div>
                 </td>
                 <td className="py-3.5 px-6 text-right">
