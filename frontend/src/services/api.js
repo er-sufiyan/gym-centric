@@ -107,6 +107,12 @@ export const apiUpdateMember = (gymId, memberId, payload) =>
 export const apiGetAuditLogs = (gymId) =>
   request(`/gyms/${gymId}/audit-logs`);
 
+export const apiSendReceiptEmail = (gymId, payload) =>
+  request(`/gyms/${gymId}/send-receipt-email`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+
 export const apiToggleMemberStatus = (gymId, memberId) =>
   request(`/gyms/${gymId}/members/${memberId}/status`, { method: 'PATCH' });
 

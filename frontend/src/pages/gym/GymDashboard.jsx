@@ -742,6 +742,7 @@ export default function GymDashboard({
       gymName: gymProfile?.gymName || 'GymCentric Gym',
       recipientName: payment.memberName,
       recipientPhone: matchedMember?.phone || '',
+      recipientEmail: matchedMember?.email || '',
       rollNo: payment.rollNo,
       shift: matchedMember?.shift,
       shiftTime: matchedMember?.shiftTime,
@@ -967,6 +968,28 @@ export default function GymDashboard({
                           </a>
                         );
                       })()}
+
+                    {(() => {
+                      const latestPayment = payments.find(
+                        (p) =>
+                          (p.memberId && p.memberId === member.id) ||
+                          (p.rollNo === member.rollNo && p.memberName === member.name)
+                      );
+                      if (!latestPayment) return null;
+                      return (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openMemberReceipt(latestPayment, member);
+                          }}
+                          className="px-2.5 py-1.5 bg-[#060b0e] hover:bg-slate-900 border border-slate-800 text-emerald-300 rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1"
+                          title="Download recent receipt PDF or send via WhatsApp / Email"
+                        >
+                          <Receipt className="w-3.5 h-3.5" /> Receipt
+                        </button>
+                      );
+                    })()}
 
                     {isProPlan && (
                       <button

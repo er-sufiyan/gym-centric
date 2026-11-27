@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { X, Send, CheckCircle2, Copy, Receipt, MessageCircle, Sparkles, ShieldCheck, Download, Share2, Loader2 } from 'lucide-react';
-import { fetchReceiptPdfBlob, generateReceiptPdfFromData } from '../../services/api';
+import { X, Send, CheckCircle2, Copy, Receipt, MessageCircle, Sparkles, ShieldCheck, Download, Share2, Mail, Loader2 } from 'lucide-react';
+import { fetchReceiptPdfBlob, generateReceiptPdfFromData, apiSendReceiptEmail } from '../../services/api';
 
 function sanitizePhoneForWa(phone) {
   const digits = String(phone || '').replace(/\D/g, '');
@@ -21,6 +21,8 @@ export default function WhatsAppReceiptModal({
   const [copied, setCopied] = useState(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [emailSuccess, setEmailSuccess] = useState('');
   const [pdfError, setPdfError] = useState('');
 
   if (!isOpen || !receipt) return null;
@@ -206,6 +208,42 @@ export default function WhatsAppReceiptModal({
     }
   };
 
+  const handleSendEmail = async () => {
+    if (!gymId) {
+      setPdfError('Gym context not available for sending email.');
+      return;
+    }
+    if (!receipt.recipientEmail || !receipt.recipientEmail.includes('@')) {
+      setPdfError('No email saved for this member. Click Edit on the member to add their email.');
+      return;
+    }
+    setIsSendingEmail(true);
+    setPdfError('');
+    setEmailSuccess('');
+    try {
+      const res = await apiSendReceiptEmail(gymId, {
+        email: receipt.recipientEmail,
+        receiptNo: receiptId,
+        gymName: receipt.gymName,
+        memberName: receipt.recipientName,
+        rollNo: receipt.rollNo || '',
+        phone: receipt.recipientPhone || '',
+        planName: receipt.planName,
+        amount: receipt.amount,
+        mode: receipt.mode,
+        date: receipt.date,
+        shift: receipt.shift || '',
+        validUntil: receipt.validUntil || '',
+        type: receipt.type || 'MEMBER'
+      });
+      setEmailSuccess(res.message || `PDF receipt sent to ${receipt.recipientEmail}`);
+    } catch (err) {
+      setPdfError(err?.message || 'Failed to send email receipt.');
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
+
   const handleSendWhatsApp = async () => {
     setPdfError('');
     if (onConfirmSend) {
@@ -374,7 +412,12 @@ export default function WhatsAppReceiptModal({
             </pre>
           </div>
 
-          {/* PDF download error */}
+          {/* PDF / Email feedback */}
+          {emailSuccess && (
+            <div className="p-2 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[11px] font-semibold">
+              {emailSuccess}
+            </div>
+          )}
           {pdfError && (
             <div className="p-2 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 text-[11px] font-semibold">
               {pdfError}
@@ -382,7 +425,7 @@ export default function WhatsAppReceiptModal({
           )}
 
           <div className="flex flex-wrap gap-2 pt-1">
-            {/* Download & Share PDF Buttons */}
+            {/* Download, Share PDF, & Email Buttons */}
             {!isPlanSummary && (
               <>
                 <button
@@ -408,6 +451,22 @@ export default function WhatsAppReceiptModal({
                   <Share2 className="w-3.5 h-3.5" />
                   Share PDF
                 </button>
+                {!requireSendToSave && (
+                  <button
+                    type="button"
+                    onClick={handleSendEmail}
+                    disabled={isSendingEmail || isSending}
+                    className="flex-1 min-w-[105px] py-2.5 bg-[#060b0e] hover:bg-slate-900 border border-violet-500/30 text-violet-300 font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 disabled:opacity-60"
+                    title={receipt.recipientEmail ? `Send PDF to ${receipt.recipientEmail}` : 'Add email on member to send'}
+                  >
+                    {isSendingEmail ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Mail className="w-3.5 h-3.5" />
+                    )}
+                    {isSendingEmail ? 'Sending...' : 'Send Email'}
+                  </button>
+                )}
               </>
             )}
 

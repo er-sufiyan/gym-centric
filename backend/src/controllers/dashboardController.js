@@ -10,6 +10,7 @@ const { getEndOfMonthDate, runRetentionCleanup } = require('../services/cleanupS
 const { getUploadAuthParams, deleteImageKitFiles } = require('../services/imagekitService');
 const { generateReceiptPdf } = require('../services/pdfReceiptService');
 const { sendBillingNotification } = require('../services/billingNotificationService');
+const emailService = require('../services/emailService');
 
 async function getPlatformSettingsPayload() {
   const settings = await PlatformSettings.findOne({ key: 'default' });
@@ -1180,6 +1181,83 @@ exports.getAuditLogs = async (req, res) => {
         details: l.details,
         createdAt: l.createdAt
       }))
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * POST /api/dashboard/gyms/:gymId/send-receipt-email
+ * Sends a PDF receipt directly to the specified email address
+ */
+exports.sendReceiptEmail = async (req, res) => {
+  try {
+    const {
+      email,
+      receiptNo,
+      gymName,
+      memberName,
+      rollNo,
+      phone,
+      planName,
+      amount,
+      mode,
+      date,
+      shift,
+      validUntil,
+      type
+    } = req.body || {};
+
+    const cleanEmail = String(email || '').trim();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return res.status(400).json({ success: false, message: 'A valid member email address is required.' });
+    }
+    if (!receiptNo || !memberName) {
+      return res.status(400).json({ success: false, message: 'receiptNo and memberName are required.' });
+    }
+
+    const pdfBuffer = await generateReceiptPdf({
+      receiptNo,
+      gymName: gymName || 'GymCentric',
+      memberName,
+      rollNo: rollNo || '',
+      phone: phone || '',
+      planName: planName || 'Membership Fee',
+      amount: Number(amount || 0),
+      mode: mode || 'CASH',
+      date: date || formatDisplayDate(new Date()),
+      shift: shift || '',
+      validUntil: validUntil || '',
+      type: type || 'MEMBER'
+    });
+
+    const filename = `Receipt-${receiptNo}.pdf`;
+    const result = await emailService.sendReceiptEmail(
+      cleanEmail,
+      {
+        gymName: gymName || 'GymCentric',
+        memberName,
+        receiptNo,
+        amount: Number(amount || 0),
+        mode: mode || 'CASH',
+        type: type || 'MEMBER'
+      },
+      pdfBuffer,
+      filename
+    );
+
+    if (!result.success) {
+      return res.status(502).json({
+        success: false,
+        message: result.error || 'Failed to send email receipt.'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      mode: result.mode,
+      message: `PDF receipt #${receiptNo} sent to ${cleanEmail}.`
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });

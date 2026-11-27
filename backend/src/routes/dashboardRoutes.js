@@ -21,7 +21,8 @@ const {
   downloadReceiptPdf,
   generateReceiptPdfFromBody,
   updateMember,
-  getAuditLogs
+  getAuditLogs,
+  sendReceiptEmail
 } = require('../controllers/dashboardController');
 const {
   protect,
@@ -56,6 +57,7 @@ router.get('/gyms/:gymId/imagekit-auth', protect, authorizeGymScope, requireActi
 router.post('/gyms/:gymId/check-in', protect, authorizeGymScope, requireActiveSubscription, recordMemberCheckIn);
 router.get('/gyms/:gymId/payments/:paymentId/receipt-pdf', protect, authorizeGymScope, requireActiveSubscription, downloadReceiptPdf);
 router.post('/gyms/:gymId/receipt-pdf', protect, authorizeGymScope, requireActiveSubscription, generateReceiptPdfFromBody);
+router.post('/gyms/:gymId/send-receipt-email', protect, authorizeGymScope, requireActiveSubscription, sendReceiptEmail);
 router.get('/gyms/:gymId/audit-logs', protect, authorizeGymScope, requireActiveSubscription, getAuditLogs);
 
 module.exports = router;
