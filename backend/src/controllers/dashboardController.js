@@ -7,6 +7,8 @@ const GymLedgerEntry = require('../models/GymLedgerEntry');
 const PlatformSettings = require('../models/PlatformSettings');
 const { getEndOfMonthDate, runRetentionCleanup } = require('../services/cleanupService');
 const { getUploadAuthParams, deleteImageKitFiles } = require('../services/imagekitService');
+const { generateReceiptPdf } = require('../services/pdfReceiptService');
+const { sendBillingNotification } = require('../services/billingNotificationService');
 
 async function getPlatformSettingsPayload() {
   const settings = await PlatformSettings.findOne({ key: 'default' });
@@ -575,10 +577,30 @@ exports.createMember = async (req, res) => {
       })
     ]);
 
+    const serializedMember = serializeMember(member);
+    const serializedPayment = serializePayment(payment);
+
+    // Auto-send billing notification to the new member (fire-and-forget)
+    const gym = await Gym.findById(gymId).select('gymName');
+    sendBillingNotification({
+      type: 'MEMBER_WELCOME',
+      phone: member.phone,
+      gymName: gym?.gymName || 'GymCentric',
+      memberName: member.name,
+      rollNo: member.rollNo,
+      planName: member.planName,
+      amount: resolvedPlanPrice,
+      mode: 'CASH',
+      date: serializedPayment.date,
+      validUntil: serializedMember.expiryDate,
+      receiptNo: receiptNo,
+      shift: member.shift
+    }).catch((err) => console.error('[Auto-Notify New Member Error]:', err.message));
+
     return res.status(201).json({
       success: true,
-      member: serializeMember(member),
-      payment: serializePayment(payment),
+      member: serializedMember,
+      payment: serializedPayment,
       ledgerEntry: serializePayment(ledgerEntry)
     });
   } catch (error) {
@@ -614,7 +636,21 @@ exports.toggleMemberStatus = async (req, res) => {
     }
     await member.save();
 
-    return res.status(200).json({ success: true, member: serializeMember(member) });
+    const serializedMember = serializeMember(member);
+
+    // Auto-send billing notification on status change (fire-and-forget)
+    const gym = await Gym.findById(req.params.gymId).select('gymName');
+    sendBillingNotification({
+      type: member.status === 'ACTIVE' ? 'STATUS_CHANGE_ACTIVE' : 'STATUS_CHANGE_EXPIRED',
+      phone: member.phone,
+      gymName: gym?.gymName || 'GymCentric',
+      memberName: member.name,
+      rollNo: member.rollNo,
+      planName: member.planName,
+      validUntil: serializedMember.expiryDate
+    }).catch((err) => console.error('[Auto-Notify Status Change Error]:', err.message));
+
+    return res.status(200).json({ success: true, member: serializedMember });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -727,10 +763,29 @@ exports.recordMemberPayment = async (req, res) => {
       })
     ]);
 
+    const serializedMember = serializeMember(member);
+    const serializedPayment = serializePayment(payment);
+
+    // Auto-send billing notification for fee payment (fire-and-forget)
+    const gym = await Gym.findById(gymId).select('gymName');
+    sendBillingNotification({
+      type: 'MEMBER',
+      phone: member.phone,
+      gymName: gym?.gymName || 'GymCentric',
+      memberName: member.name,
+      rollNo: member.rollNo,
+      planName: notes,
+      amount: Number(amount),
+      mode,
+      date: serializedPayment.date,
+      validUntil: serializedMember.expiryDate,
+      receiptNo: receiptNo
+    }).catch((err) => console.error('[Auto-Notify Payment Error]:', err.message));
+
     return res.status(201).json({
       success: true,
-      member: serializeMember(member),
-      payment: serializePayment(payment),
+      member: serializedMember,
+      payment: serializedPayment,
       ledgerEntry: serializePayment(ledgerEntry)
     });
   } catch (error) {
@@ -862,6 +917,110 @@ exports.recordMemberCheckIn = async (req, res) => {
       member: serializeMember(member)
     });
   } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * GET /api/dashboard/gyms/:gymId/payments/:paymentId/receipt-pdf
+ * Downloads a PDF receipt for a specific payment.
+ */
+exports.downloadReceiptPdf = async (req, res) => {
+  try {
+    const { gymId, paymentId } = req.params;
+
+    const payment = await Payment.findOne({ _id: paymentId, gymId });
+    if (!payment) {
+      return res.status(404).json({ success: false, message: 'Payment not found' });
+    }
+
+    const [member, gym] = await Promise.all([
+      Member.findById(payment.memberId),
+      Gym.findById(gymId).select('gymName')
+    ]);
+
+    const receiptData = {
+      receiptNo: payment.receiptNo || `RCP-${String(payment._id).slice(-4).toUpperCase()}`,
+      gymName: gym?.gymName || 'GymCentric',
+      memberName: payment.memberName,
+      rollNo: payment.rollNo,
+      phone: member?.phone || '',
+      planName: payment.planName || payment.notes || 'Membership Fee',
+      amount: payment.amount,
+      mode: payment.mode,
+      date: formatDisplayDate(payment.paymentDate || payment.createdAt),
+      shift: member?.shift || '',
+      validUntil: member ? formatDisplayDate(member.expiryDate) : '',
+      type: 'MEMBER'
+    };
+
+    const pdfBuffer = await generateReceiptPdf(receiptData);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="Receipt-${receiptData.receiptNo}.pdf"`
+    );
+    res.setHeader('Content-Length', pdfBuffer.length);
+    return res.send(pdfBuffer);
+  } catch (error) {
+    console.error('[Receipt PDF Error]:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * POST /api/dashboard/gyms/:gymId/receipt-pdf
+ * Generates a PDF receipt from request body data (for receipts not yet saved / frontend-only flows).
+ */
+exports.generateReceiptPdfFromBody = async (req, res) => {
+  try {
+    const {
+      receiptNo,
+      gymName,
+      memberName,
+      rollNo,
+      phone,
+      planName,
+      amount,
+      mode,
+      date,
+      shift,
+      validUntil,
+      type
+    } = req.body;
+
+    if (!receiptNo || !memberName || !amount) {
+      return res.status(400).json({
+        success: false,
+        message: 'receiptNo, memberName, and amount are required.'
+      });
+    }
+
+    const pdfBuffer = await generateReceiptPdf({
+      receiptNo,
+      gymName: gymName || 'GymCentric',
+      memberName,
+      rollNo: rollNo || '',
+      phone: phone || '',
+      planName: planName || 'Membership Fee',
+      amount: Number(amount),
+      mode: mode || 'CASH',
+      date: date || formatDisplayDate(new Date()),
+      shift: shift || '',
+      validUntil: validUntil || '',
+      type: type || 'MEMBER'
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="Receipt-${receiptNo}.pdf"`
+    );
+    res.setHeader('Content-Length', pdfBuffer.length);
+    return res.send(pdfBuffer);
+  } catch (error) {
+    console.error('[Receipt PDF Generate Error]:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };

@@ -131,6 +131,47 @@ export const apiMemberCheckIn = (gymId, payload) =>
     body: JSON.stringify(payload)
   });
 
+/**
+ * Download a PDF receipt for an existing payment record.
+ * Returns a Blob URL that can be used to trigger a download.
+ */
+export async function downloadReceiptPdf(gymId, paymentId) {
+  const token = getActiveAuthToken();
+  const res = await fetch(`${API_BASE}/gyms/${gymId}/payments/${paymentId}/receipt-pdf`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.message || `PDF download failed (${res.status})`);
+  }
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
+/**
+ * Generate a PDF receipt from receipt data (for frontend-only / preview flows).
+ * Returns a Blob URL that can be used to trigger a download.
+ */
+export async function generateReceiptPdfFromData(gymId, receiptData) {
+  const token = getActiveAuthToken();
+  const res = await fetch(`${API_BASE}/gyms/${gymId}/receipt-pdf`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify(receiptData)
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.message || `PDF generation failed (${res.status})`);
+  }
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
 export async function uploadMemberPhoto(gymId, compressed) {
   try {
     const auth = await apiGetImageKitAuth(gymId);

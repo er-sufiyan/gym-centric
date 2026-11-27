@@ -17,7 +17,9 @@ const {
   recordMemberPayment,
   markMemberReminderSent,
   getImageKitAuth,
-  recordMemberCheckIn
+  recordMemberCheckIn,
+  downloadReceiptPdf,
+  generateReceiptPdfFromBody
 } = require('../controllers/dashboardController');
 const {
   protect,
@@ -48,5 +50,7 @@ router.post('/gyms/:gymId/payments', protect, authorizeGymScope, recordMemberPay
 router.patch('/gyms/:gymId/members/:memberId/reminder', protect, authorizeGymScope, markMemberReminderSent);
 router.get('/gyms/:gymId/imagekit-auth', protect, authorizeGymScope, getImageKitAuth);
 router.post('/gyms/:gymId/check-in', protect, authorizeGymScope, recordMemberCheckIn);
+router.get('/gyms/:gymId/payments/:paymentId/receipt-pdf', protect, authorizeGymScope, downloadReceiptPdf);
+router.post('/gyms/:gymId/receipt-pdf', protect, authorizeGymScope, generateReceiptPdfFromBody);
 
 module.exports = router;

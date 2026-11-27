@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { X, Send, CheckCircle2, Copy, Receipt, MessageCircle, Sparkles, ShieldCheck } from 'lucide-react';
+import { X, Send, CheckCircle2, Copy, Receipt, MessageCircle, Sparkles, ShieldCheck, Download, FileText, Loader2 } from 'lucide-react';
+import { generateReceiptPdfFromData } from '../../services/api';
 
 function sanitizePhoneForWa(phone) {
   const digits = String(phone || '').replace(/\D/g, '');
@@ -8,8 +9,10 @@ function sanitizePhoneForWa(phone) {
   return digits;
 }
 
-export default function WhatsAppReceiptModal({ isOpen, onClose, receipt, onSent }) {
+export default function WhatsAppReceiptModal({ isOpen, onClose, receipt, onSent, gymId }) {
   const [copied, setCopied] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState('');
 
   if (!isOpen || !receipt) return null;
 
@@ -47,6 +50,7 @@ export default function WhatsAppReceiptModal({ isOpen, onClose, receipt, onSent 
       receipt.validUntil ? `✅ *Valid Until:* ${receipt.validUntil}` : null,
       `🧾 *Receipt:* #${receiptId} • ₹${Number(receipt.amount).toLocaleString()} (${receipt.mode})`,
       ``,
+      `📄 A PDF receipt has been auto-generated for your records.`,
       `See you on the floor! Stay strong 💪`
     ].filter((line) => line !== null);
   } else if (receipt.type === 'SAAS_WELCOME') {
@@ -86,6 +90,8 @@ export default function WhatsAppReceiptModal({ isOpen, onClose, receipt, onSent 
       `Amount Paid: ₹${Number(receipt.amount).toLocaleString()} (${receipt.mode})`,
       `Date: ${receipt.date}`,
       receipt.validUntil ? `Valid Until: ${receipt.validUntil}` : null,
+      ``,
+      `📄 A PDF receipt has been auto-generated for your records.`,
       `Thank you for training with ${receipt.gymName}!`
     ].filter(Boolean);
   }
@@ -100,6 +106,44 @@ export default function WhatsAppReceiptModal({ isOpen, onClose, receipt, onSent 
     }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!gymId) {
+      setPdfError('Gym context not available for PDF generation.');
+      return;
+    }
+    setIsDownloadingPdf(true);
+    setPdfError('');
+    try {
+      const blobUrl = await generateReceiptPdfFromData(gymId, {
+        receiptNo: receiptId,
+        gymName: receipt.gymName,
+        memberName: receipt.recipientName,
+        rollNo: receipt.rollNo || '',
+        phone: receipt.recipientPhone || '',
+        planName: receipt.planName,
+        amount: receipt.amount,
+        mode: receipt.mode,
+        date: receipt.date,
+        shift: receipt.shift || '',
+        validUntil: receipt.validUntil || '',
+        type: receipt.type || 'MEMBER'
+      });
+
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `Receipt-${receiptId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      console.error('[PDF Download Error]:', err);
+      setPdfError(err.message || 'Failed to generate PDF');
+    } finally {
+      setIsDownloadingPdf(false);
+    }
   };
 
   const handleSendWhatsApp = () => {
@@ -213,6 +257,14 @@ export default function WhatsAppReceiptModal({ isOpen, onClose, receipt, onSent 
             )}
           </div>
 
+          {/* Auto-notification badge */}
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+            <span className="text-[10px] font-semibold text-emerald-300">
+              Automatic WhatsApp notification has been sent to the member for all billing events.
+            </span>
+          </div>
+
           {/* WhatsApp Message Preview */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
@@ -233,7 +285,31 @@ export default function WhatsAppReceiptModal({ isOpen, onClose, receipt, onSent 
             </pre>
           </div>
 
+          {/* PDF download error */}
+          {pdfError && (
+            <div className="p-2 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 text-[11px] font-semibold">
+              {pdfError}
+            </div>
+          )}
+
           <div className="flex gap-2.5 pt-1">
+            {/* Download PDF Button */}
+            {!isPlanSummary && (
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                disabled={isDownloadingPdf}
+                className="flex-1 py-2.5 bg-[#060b0e] hover:bg-slate-900 border border-cyan-500/30 text-cyan-300 font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 disabled:opacity-60"
+              >
+                {isDownloadingPdf ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" />
+                )}
+                {isDownloadingPdf ? 'Generating...' : 'Download PDF'}
+              </button>
+            )}
+
             <button
               type="button"
               onClick={onClose}

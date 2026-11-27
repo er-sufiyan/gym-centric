@@ -1983,6 +1983,7 @@ export default function GymDashboard({
         onClose={() => setReceiptToSend(null)}
         receipt={receiptToSend}
         onSent={(msg) => showToast(msg)}
+        gymId={gymProfile?.id}
       />
 
       {isProPlan && (
