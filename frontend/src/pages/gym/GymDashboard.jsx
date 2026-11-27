@@ -20,6 +20,9 @@ import {
   MessageCircle,
   BellRing,
   Upload,
+  Pencil,
+  Download,
+  History,
   X
 } from 'lucide-react';
 import SidebarLayout from '../../components/common/SidebarLayout';
@@ -38,12 +41,14 @@ import { buildWhatsAppUrl, getMemberExpiryReminder } from '../../utils/whatsapp'
 import { compressMemberPhoto, formatBytes } from '../../utils/imageCompress';
 import {
   apiCreateMember,
+  apiUpdateMember,
   apiToggleMemberStatus,
   apiDeleteMember,
   apiCreateGymPlan,
   apiDeleteGymPlan,
   apiRecordMemberPayment,
   apiMarkMemberReminderSent,
+  apiGetAuditLogs,
   uploadMemberPhoto
 } from '../../services/api';
 
@@ -82,6 +87,12 @@ export default function GymDashboard({
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isOfferModalOpen, setIsOfferModalOpen] = useState(false);
   const [isRemindersModalOpen, setIsRemindersModalOpen] = useState(false);
+  const [editingMember, setEditingMember] = useState(null);
+  const [isUpdatingMember, setIsUpdatingMember] = useState(false);
+  const [editMemberError, setEditMemberError] = useState('');
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [showAuditLogs, setShowAuditLogs] = useState(false);
+  const [isLoadingAuditLogs, setIsLoadingAuditLogs] = useState(false);
   const [compressedPhoto, setCompressedPhoto] = useState(null);
   const [isCompressingPhoto, setIsCompressingPhoto] = useState(false);
   const [isSavingMember, setIsSavingMember] = useState(false);
@@ -118,7 +129,9 @@ export default function GymDashboard({
     name: '',
     rollNo: '',
     phone: '',
+    email: '',
     shift: 'MORNING',
+    paymentMode: 'CASH',
     selectedPlanId: gymPlans[0]?.id || '',
     planName: gymPlans[0]?.name || '1 Month Standard',
     planDurationDays: gymPlans[0]?.durationDays || 30,
@@ -140,7 +153,9 @@ export default function GymDashboard({
       name: '',
       rollNo: '',
       phone: '',
+      email: '',
       shift: 'MORNING',
+      paymentMode: 'CASH',
       selectedPlanId: defaultPlan.id,
       planName: defaultPlan.name,
       planDurationDays: defaultPlan.durationDays,
@@ -385,7 +400,9 @@ export default function GymDashboard({
             name: snapshotMember.name.trim(),
             rollNo: snapshotMember.rollNo.trim(),
             phone: snapshotMember.phone.trim(),
+            email: (snapshotMember.email || '').trim(),
             shift: snapshotMember.shift,
+            paymentMode: snapshotMember.paymentMode || 'CASH',
             planName: resolvedPlanName,
             planPrice: resolvedPlanPrice,
             planDurationDays: resolvedDurationDays,
@@ -403,7 +420,9 @@ export default function GymDashboard({
             name: '',
             rollNo: '',
             phone: '',
+            email: '',
             shift: 'MORNING',
+            paymentMode: 'CASH',
             selectedPlanId: fallbackPlan.id,
             planName: fallbackPlan.name,
             planDurationDays: fallbackPlan.durationDays,
@@ -443,7 +462,7 @@ export default function GymDashboard({
         memberName: created.name,
         rollNo: created.rollNo,
         amount: resolvedPlanPrice,
-        mode: 'CASH',
+        mode: snapshotMember.paymentMode || 'CASH',
         planName: created.planName,
         date: admittedDate
       };
@@ -458,7 +477,9 @@ export default function GymDashboard({
         name: '',
         rollNo: '',
         phone: '',
+        email: '',
         shift: 'MORNING',
+        paymentMode: 'CASH',
         selectedPlanId: fallbackPlan.id,
         planName: fallbackPlan.name,
         planDurationDays: fallbackPlan.durationDays,
@@ -481,10 +502,116 @@ export default function GymDashboard({
       shiftTime: '',
       planName: resolvedPlanName,
       amount: resolvedPlanPrice,
-      mode: 'CASH',
+      mode: snapshotMember.paymentMode || 'CASH',
       date: admittedDate,
       validUntil: formattedExpiry
     });
+  };
+
+  const openEditMember = (member) => {
+    setEditMemberError('');
+    setEditingMember({
+      id: member.id,
+      rollNo: member.rollNo,
+      name: member.name || '',
+      phone: member.phone || '',
+      email: member.email || '',
+      shift: member.shift || 'MORNING'
+    });
+  };
+
+  const handleUpdateMember = async (e) => {
+    e.preventDefault();
+    if (!editingMember) return;
+    if (!editingMember.name.trim() || editingMember.phone.replace(/\D/g, '').length < 10) {
+      setEditMemberError('Name and a valid 10+ digit phone number are required.');
+      return;
+    }
+
+    if (dbConnected) {
+      setIsUpdatingMember(true);
+      try {
+        const res = await apiUpdateMember(gymProfile.id, editingMember.id, {
+          name: editingMember.name.trim(),
+          phone: editingMember.phone.trim(),
+          email: (editingMember.email || '').trim(),
+          shift: editingMember.shift
+        });
+        setMembers((prev) => prev.map((m) => (m.id === editingMember.id ? res.member : m)));
+        setEditingMember(null);
+        showToast(`Updated ${res.member.name} (#${res.member.rollNo}).`);
+      } catch (err) {
+        setEditMemberError(err?.message || 'Failed to update member.');
+      } finally {
+        setIsUpdatingMember(false);
+      }
+      return;
+    }
+
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.id === editingMember.id
+          ? {
+              ...m,
+              name: editingMember.name.trim(),
+              phone: editingMember.phone.trim(),
+              email: (editingMember.email || '').trim(),
+              shift: editingMember.shift
+            }
+          : m
+      )
+    );
+    setEditingMember(null);
+    showToast(`Updated ${editingMember.name} (#${editingMember.rollNo}).`);
+  };
+
+  const handleExportLedgerCsv = () => {
+    if (monthlyPayments.length === 0) {
+      showToast('No payments in this month to export.');
+      return;
+    }
+    const headers = ['Receipt No', 'Date', 'Member Name', 'Roll No', 'Plan', 'Mode', 'Amount (INR)'];
+    const escapeCsv = (val) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+    const rows = monthlyPayments.map((p) =>
+      [
+        p.receiptNo || '',
+        p.date || '',
+        p.memberName || '',
+        p.rollNo || '',
+        p.planName || '',
+        p.mode || '',
+        Number(p.amount || 0)
+      ]
+        .map(escapeCsv)
+        .join(',')
+    );
+    const csvContent = [headers.map(escapeCsv).join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(gymProfile?.gymName || 'gym').replace(/\s+/g, '-')}-Ledger-${monthSection.shortLabel}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast(`Exported ${monthlyPayments.length} fee records as CSV.`);
+  };
+
+  const handleToggleAuditLogs = async () => {
+    const next = !showAuditLogs;
+    setShowAuditLogs(next);
+    if (next && dbConnected && gymProfile?.id) {
+      setIsLoadingAuditLogs(true);
+      try {
+        const res = await apiGetAuditLogs(gymProfile.id);
+        setAuditLogs(res.logs || []);
+      } catch (err) {
+        showToast(err?.message || 'Failed to load audit logs.');
+      } finally {
+        setIsLoadingAuditLogs(false);
+      }
+    }
   };
 
   const openPayForMember = (member) => {
@@ -875,6 +1002,17 @@ export default function GymDashboard({
                       className="px-2 py-1.5 bg-[#060b0e] hover:bg-slate-900 border border-slate-800 text-slate-400 hover:text-white rounded-lg text-[10px] font-semibold transition-colors"
                     >
                       {member.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
+                    </button>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openEditMember(member);
+                      }}
+                      className="p-1.5 bg-[#060b0e] hover:bg-slate-900 border border-slate-800 text-slate-300 hover:text-cyan-300 rounded-lg transition-colors"
+                      title="Edit Member Details"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
                     </button>
 
                     <button
@@ -1407,15 +1545,79 @@ export default function GymDashboard({
                     {monthSection.monthLabel} — Member Fee History
                   </h3>
                 </div>
-                <div className="flex items-center gap-2 text-xs font-bold">
+                <div className="flex items-center gap-2 text-xs font-bold flex-wrap">
                   <span className="px-3 py-1 rounded-lg bg-[#060b0e] border border-slate-800 text-slate-300">
                     Cash: ₹{cashIncome.toLocaleString()}
                   </span>
                   <span className="px-3 py-1 rounded-lg bg-[#060b0e] border border-slate-800 text-slate-300">
                     UPI: ₹{upiIncome.toLocaleString()}
                   </span>
+                  <button
+                    type="button"
+                    onClick={handleExportLedgerCsv}
+                    className="px-3 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 inline-flex items-center gap-1.5 transition-colors"
+                    title="Export monthly fee ledger as CSV"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Export CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleToggleAuditLogs}
+                    className={`px-3 py-1 rounded-lg border inline-flex items-center gap-1.5 transition-colors ${
+                      showAuditLogs
+                        ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                        : 'bg-[#060b0e] hover:bg-slate-900 border-slate-800 text-slate-300'
+                    }`}
+                    title="View tamper-proof billing & member audit log"
+                  >
+                    <History className="w-3.5 h-3.5" /> {showAuditLogs ? 'Hide Audit Log' : 'Audit Log'}
+                  </button>
                 </div>
               </div>
+
+              {showAuditLogs && (
+                <div className="p-4 rounded-2xl bg-[#060b0e] border border-amber-500/30 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+                      <History className="w-3.5 h-3.5" /> Tamper-Proof Billing Audit Trail
+                    </span>
+                    <span className="text-[10px] text-slate-500">Latest 100 actions</span>
+                  </div>
+                  {isLoadingAuditLogs ? (
+                    <p className="text-xs text-slate-400 py-3">Loading audit logs...</p>
+                  ) : auditLogs.length === 0 ? (
+                    <p className="text-xs text-slate-500 py-2">
+                      {dbConnected ? 'No audit events recorded yet.' : 'Audit log requires database connection.'}
+                    </p>
+                  ) : (
+                    <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
+                      {auditLogs.map((log) => (
+                        <div
+                          key={log.id}
+                          className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 px-3 py-2 rounded-xl bg-[#0b1418] border border-slate-800/80 text-[11px]"
+                        >
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 font-bold text-[10px]">
+                              {log.action}
+                            </span>
+                            <span className="font-bold text-white">{log.memberName}</span>
+                            {log.rollNo && <span className="text-slate-400">#{log.rollNo}</span>}
+                            {log.details && <span className="text-slate-400">• {log.details}</span>}
+                          </div>
+                          <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                            {log.amount !== null && log.amount !== undefined && (
+                              <span className="font-bold text-emerald-400">
+                                ₹{Number(log.amount).toLocaleString()} ({log.mode})
+                              </span>
+                            )}
+                            <span>{new Date(log.createdAt).toLocaleString()}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <MonthlyResetBanner monthLabel={monthSection.monthLabel} />
 
@@ -1729,6 +1931,19 @@ export default function GymDashboard({
                 </div>
               </div>
 
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Member Email <span className="text-slate-500 font-normal">(Optional — auto-sends PDF receipt)</span>
+                </label>
+                <input
+                  type="email"
+                  placeholder="member@example.com"
+                  value={newMember.email}
+                  onChange={(e) => setNewMember({ ...newMember, email: e.target.value })}
+                  className="w-full bg-[#060b0e] border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
@@ -1821,6 +2036,36 @@ export default function GymDashboard({
                   <p className="text-[10px] text-slate-500 mt-1.5">
                     Auto-filled from plan; editable for remaining days.
                   </p>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Admission Payment Mode
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNewMember({ ...newMember, paymentMode: 'CASH' })}
+                    className={`py-2 rounded-xl text-xs font-bold border ${
+                      newMember.paymentMode === 'CASH'
+                        ? 'bg-cyan-400 text-[#060b0e] border-cyan-400'
+                        : 'bg-[#060b0e] text-slate-400 border-slate-800'
+                    }`}
+                  >
+                    Cash
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewMember({ ...newMember, paymentMode: 'UPI' })}
+                    className={`py-2 rounded-xl text-xs font-bold border ${
+                      newMember.paymentMode === 'UPI'
+                        ? 'bg-cyan-400 text-[#060b0e] border-cyan-400'
+                        : 'bg-[#060b0e] text-slate-400 border-slate-800'
+                    }`}
+                  >
+                    UPI QR
+                  </button>
                 </div>
               </div>
 
@@ -1982,6 +2227,102 @@ export default function GymDashboard({
         onSent={(msg) => showToast(msg)}
         gymId={gymProfile?.id}
       />
+
+      {editingMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="bg-[#0b1418] border border-slate-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold text-white">
+                Edit Member #{editingMember.rollNo}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingMember(null)}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleUpdateMember} className="space-y-4">
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editingMember.name}
+                  onChange={(e) => setEditingMember({ ...editingMember, name: e.target.value })}
+                  className="w-full bg-[#060b0e] border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Phone Number
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editingMember.phone}
+                  onChange={(e) => setEditingMember({ ...editingMember, phone: e.target.value })}
+                  className="w-full bg-[#060b0e] border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Email <span className="text-slate-500 font-normal">(Optional — auto-sends PDF receipt)</span>
+                </label>
+                <input
+                  type="email"
+                  placeholder="member@example.com"
+                  value={editingMember.email}
+                  onChange={(e) => setEditingMember({ ...editingMember, email: e.target.value })}
+                  className="w-full bg-[#060b0e] border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Shift Slot
+                </label>
+                <select
+                  value={editingMember.shift}
+                  onChange={(e) => setEditingMember({ ...editingMember, shift: e.target.value })}
+                  className="w-full bg-[#060b0e] border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                >
+                  <option value="MORNING">Morning</option>
+                  <option value="EVENING">Evening</option>
+                </select>
+              </div>
+
+              {editMemberError && (
+                <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs font-semibold">
+                  {editMemberError}
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingMember(null)}
+                  className="flex-1 py-2.5 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs hover:bg-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingMember}
+                  className="flex-1 py-2.5 bg-cyan-400 text-[#060b0e] font-extrabold rounded-xl text-xs hover:bg-cyan-300 disabled:opacity-60"
+                >
+                  {isUpdatingMember ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {isProPlan && (
         <ExpiryRemindersModal

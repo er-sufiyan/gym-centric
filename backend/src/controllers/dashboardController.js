@@ -5,6 +5,7 @@ const Payment = require('../models/Payment');
 const SaasPayment = require('../models/SaasPayment');
 const GymLedgerEntry = require('../models/GymLedgerEntry');
 const PlatformSettings = require('../models/PlatformSettings');
+const AuditLog = require('../models/AuditLog');
 const { getEndOfMonthDate, runRetentionCleanup } = require('../services/cleanupService');
 const { getUploadAuthParams, deleteImageKitFiles } = require('../services/imagekitService');
 const { generateReceiptPdf } = require('../services/pdfReceiptService');
@@ -70,6 +71,7 @@ function serializeMember(m) {
     rollNo: m.rollNo,
     name: m.name,
     phone: m.phone,
+    email: m.email || '',
     photoUrl:
       m.photoUrl ||
       'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&h=150&fit=crop&crop=faces',
@@ -489,13 +491,16 @@ exports.createMember = async (req, res) => {
       name,
       rollNo,
       phone,
+      email = '',
       shift = 'MORNING',
+      paymentMode = 'CASH',
       planName,
       planPrice,
       planDurationDays = 30,
       photoUrl,
       photoFileId = ''
     } = req.body;
+    const resolvedPaymentMode = String(paymentMode).toUpperCase() === 'UPI' ? 'UPI' : 'CASH';
 
     if (!String(name || '').trim() || !String(rollNo || '').trim() || !String(phone || '').trim()) {
       return res.status(400).json({
@@ -541,12 +546,13 @@ exports.createMember = async (req, res) => {
     const notif = await sendBillingNotification({
       type: 'MEMBER_WELCOME',
       phone: phone.trim(),
+      email: String(email || '').trim(),
       gymName: gym?.gymName || 'GymCentric',
       memberName: name.trim(),
       rollNo: rollNo.trim(),
       planName: resolvedPlanName,
       amount: resolvedPlanPrice,
-      mode: 'CASH',
+      mode: resolvedPaymentMode,
       date: formatDisplayDate(now),
       validUntil: formatDisplayDate(expiryDate),
       receiptNo,
@@ -566,6 +572,7 @@ exports.createMember = async (req, res) => {
       rollNo: rollNo.trim(),
       name: name.trim(),
       phone: phone.trim(),
+      email: String(email || '').trim(),
       photoUrl:
         photoUrl ||
         'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&h=150&fit=crop&crop=faces',
@@ -591,7 +598,7 @@ exports.createMember = async (req, res) => {
         rollNo: member.rollNo,
         planName: member.planName,
         amount: resolvedPlanPrice,
-        mode: 'CASH',
+        mode: resolvedPaymentMode,
         notes: member.planName,
         paymentDate: now
       }),
@@ -603,10 +610,21 @@ exports.createMember = async (req, res) => {
         rollNo: member.rollNo,
         planName: member.planName,
         amount: resolvedPlanPrice,
-        mode: 'CASH',
+        mode: resolvedPaymentMode,
         paymentDate: now,
         expiresAt: getEndOfMonthDate(now)
-      })
+      }),
+      AuditLog.create({
+        gymId,
+        actorRole: req.gym?.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'GYM_OWNER',
+        action: 'MEMBER_CREATED',
+        memberId: String(member._id),
+        memberName: member.name,
+        rollNo: member.rollNo,
+        amount: resolvedPlanPrice,
+        mode: resolvedPaymentMode,
+        details: `Admitted on ${resolvedPlanName} (${resolvedDurationDays}d)`
+      }).catch(() => {})
     ]);
 
     return res.status(201).json({
@@ -645,6 +663,7 @@ exports.toggleMemberStatus = async (req, res) => {
     const notif = await sendBillingNotification({
       type: nextStatus === 'ACTIVE' ? 'STATUS_CHANGE_ACTIVE' : 'STATUS_CHANGE_EXPIRED',
       phone: member.phone,
+      email: member.email || '',
       gymName: gym?.gymName || 'GymCentric',
       memberName: member.name,
       rollNo: member.rollNo,
@@ -672,6 +691,16 @@ exports.toggleMemberStatus = async (req, res) => {
     }
     await member.save();
 
+    AuditLog.create({
+      gymId: req.params.gymId,
+      actorRole: req.gym?.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'GYM_OWNER',
+      action: 'STATUS_CHANGED',
+      memberId: String(member._id),
+      memberName: member.name,
+      rollNo: member.rollNo,
+      details: `Status changed to ${member.status}`
+    }).catch(() => {});
+
     return res.status(200).json({
       success: true,
       member: serializeMember(member),
@@ -697,7 +726,16 @@ exports.deleteMember = async (req, res) => {
     await Promise.all([
       Payment.deleteMany({ gymId, memberId }),
       GymLedgerEntry.deleteMany({ gymId, memberId }),
-      deleted.photoFileId ? deleteImageKitFiles([deleted.photoFileId]) : Promise.resolve()
+      deleted.photoFileId ? deleteImageKitFiles([deleted.photoFileId]) : Promise.resolve(),
+      AuditLog.create({
+        gymId,
+        actorRole: req.gym?.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'GYM_OWNER',
+        action: 'MEMBER_DELETED',
+        memberId: String(deleted._id),
+        memberName: deleted.name,
+        rollNo: deleted.rollNo,
+        details: 'Member & all billing records permanently deleted'
+      }).catch(() => {})
     ]);
 
     return res.status(200).json({ success: true, deletedMemberId: memberId });
@@ -756,6 +794,7 @@ exports.recordMemberPayment = async (req, res) => {
     const notif = await sendBillingNotification({
       type: 'MEMBER',
       phone: member.phone,
+      email: member.email || '',
       gymName: gym?.gymName || 'GymCentric',
       memberName: member.name,
       rollNo: member.rollNo,
@@ -810,7 +849,18 @@ exports.recordMemberPayment = async (req, res) => {
         mode,
         paymentDate: now,
         expiresAt: getEndOfMonthDate(now)
-      })
+      }),
+      AuditLog.create({
+        gymId,
+        actorRole: req.gym?.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'GYM_OWNER',
+        action: 'PAYMENT_RECORDED',
+        memberId: String(member._id),
+        memberName: member.name,
+        rollNo: member.rollNo,
+        amount: Number(amount),
+        mode,
+        details: `Receipt #${receiptNo} • ${notes} (+${extendDays}d)`
+      }).catch(() => {})
     ]);
 
     return res.status(201).json({
@@ -1053,6 +1103,85 @@ exports.generateReceiptPdfFromBody = async (req, res) => {
     return res.send(pdfBuffer);
   } catch (error) {
     console.error('[Receipt PDF Generate Error]:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * PUT /api/dashboard/gyms/:gymId/members/:memberId
+ * Update member profile details (name, phone, optional email, shift, photo) without deleting/recreating
+ */
+exports.updateMember = async (req, res) => {
+  try {
+    const { gymId, memberId } = req.params;
+    const { name, phone, email, shift, photoUrl, photoFileId } = req.body || {};
+
+    const member = await Member.findOne({ _id: memberId, gymId });
+    if (!member) {
+      return res.status(404).json({ success: false, message: 'Member not found' });
+    }
+
+    if (name !== undefined && String(name).trim()) {
+      member.name = String(name).trim();
+    }
+    if (phone !== undefined && String(phone).trim()) {
+      member.phone = String(phone).trim();
+    }
+    if (email !== undefined) {
+      member.email = String(email || '').trim();
+    }
+    if (shift && ['MORNING', 'EVENING'].includes(String(shift).toUpperCase())) {
+      member.shift = String(shift).toUpperCase();
+    }
+    if (photoUrl !== undefined && String(photoUrl).trim()) {
+      member.photoUrl = String(photoUrl).trim();
+    }
+    if (photoFileId !== undefined) {
+      member.photoFileId = String(photoFileId || '').trim();
+    }
+
+    await member.save();
+
+    AuditLog.create({
+      gymId,
+      actorRole: req.gym?.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'GYM_OWNER',
+      action: 'MEMBER_UPDATED',
+      memberId: String(member._id),
+      memberName: member.name,
+      rollNo: member.rollNo,
+      details: `Updated profile (Shift: ${member.shift}${member.email ? `, Email: ${member.email}` : ''})`
+    }).catch(() => {});
+
+    return res.status(200).json({ success: true, member: serializeMember(member) });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * GET /api/dashboard/gyms/:gymId/audit-logs
+ * Returns recent tamper-proof billing & member activity logs for this gym
+ */
+exports.getAuditLogs = async (req, res) => {
+  try {
+    const { gymId } = req.params;
+    const logs = await AuditLog.find({ gymId }).sort({ createdAt: -1 }).limit(100);
+    return res.status(200).json({
+      success: true,
+      logs: logs.map((l) => ({
+        id: String(l._id),
+        actorRole: l.actorRole,
+        action: l.action,
+        memberId: l.memberId,
+        memberName: l.memberName,
+        rollNo: l.rollNo,
+        amount: l.amount,
+        mode: l.mode,
+        details: l.details,
+        createdAt: l.createdAt
+      }))
+    });
+  } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
 };

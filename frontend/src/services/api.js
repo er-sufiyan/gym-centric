@@ -101,6 +101,12 @@ export const apiUpdatePlatformSettings = (payload) =>
 export const apiCreateMember = (gymId, payload) =>
   request(`/gyms/${gymId}/members`, { method: 'POST', body: JSON.stringify(payload) });
 
+export const apiUpdateMember = (gymId, memberId, payload) =>
+  request(`/gyms/${gymId}/members/${memberId}`, { method: 'PUT', body: JSON.stringify(payload) });
+
+export const apiGetAuditLogs = (gymId) =>
+  request(`/gyms/${gymId}/audit-logs`);
+
 export const apiToggleMemberStatus = (gymId, memberId) =>
   request(`/gyms/${gymId}/members/${memberId}/status`, { method: 'PATCH' });
 
@@ -151,10 +157,9 @@ export async function downloadReceiptPdf(gymId, paymentId) {
 }
 
 /**
- * Generate a PDF receipt from receipt data (for frontend-only / preview flows).
- * Returns a Blob URL that can be used to trigger a download.
+ * Fetch a PDF receipt Blob from receipt data (for download or mobile Web Share).
  */
-export async function generateReceiptPdfFromData(gymId, receiptData) {
+export async function fetchReceiptPdfBlob(gymId, receiptData) {
   const token = getActiveAuthToken();
   const res = await fetch(`${API_BASE}/gyms/${gymId}/receipt-pdf`, {
     method: 'POST',
@@ -168,7 +173,15 @@ export async function generateReceiptPdfFromData(gymId, receiptData) {
     const errData = await res.json().catch(() => ({}));
     throw new Error(errData.message || `PDF generation failed (${res.status})`);
   }
-  const blob = await res.blob();
+  return await res.blob();
+}
+
+/**
+ * Generate a PDF receipt from receipt data (for frontend-only / preview flows).
+ * Returns a Blob URL that can be used to trigger a download.
+ */
+export async function generateReceiptPdfFromData(gymId, receiptData) {
+  const blob = await fetchReceiptPdfBlob(gymId, receiptData);
   return URL.createObjectURL(blob);
 }
 

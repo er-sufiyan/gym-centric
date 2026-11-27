@@ -23,6 +23,11 @@ const memberSchema = new mongoose.Schema(
       required: [true, 'Member phone number is required'],
       trim: true
     },
+    email: {
+      type: String,
+      trim: true,
+      default: ''
+    },
     photoUrl: {
       type: String,
       default: ''

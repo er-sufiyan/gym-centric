@@ -1,5 +1,6 @@
 const axios = require('axios');
 const whatsappService = require('./whatsappService');
+const emailService = require('./emailService');
 const { generateReceiptPdf } = require('./pdfReceiptService');
 
 /**
@@ -204,10 +205,9 @@ async function sendBillingNotification(opts) {
     results.whatsapp = { success: true, mode: 'DEVELOPMENT_SIMULATION', filename: pdfFilename };
   }
 
-  // 2) Email notification (if member email and SMTP are configured)
-  if (email && email.includes('@')) {
-    console.log(`[BILLING NOTIFICATION - ${type}] Email to ${email}: ${messageText.substring(0, 80)}...`);
-    results.email = { success: true, mode: 'DEVELOPMENT_SIMULATION' };
+  // 2) Free automatic Email PDF receipt (if member email is provided)
+  if (email && String(email).includes('@')) {
+    results.email = await emailService.sendReceiptEmail(email, opts, pdfBuffer, pdfFilename);
   }
 
   return { success: true, ...results };

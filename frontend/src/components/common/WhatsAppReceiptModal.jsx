@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { X, Send, CheckCircle2, Copy, Receipt, MessageCircle, Sparkles, ShieldCheck, Download, FileText, Loader2 } from 'lucide-react';
-import { generateReceiptPdfFromData } from '../../services/api';
+import { X, Send, CheckCircle2, Copy, Receipt, MessageCircle, Sparkles, ShieldCheck, Download, Share2, Loader2 } from 'lucide-react';
+import { fetchReceiptPdfBlob, generateReceiptPdfFromData } from '../../services/api';
 
 function sanitizePhoneForWa(phone) {
   const digits = String(phone || '').replace(/\D/g, '');
@@ -148,6 +148,59 @@ export default function WhatsAppReceiptModal({
     } catch (err) {
       console.error('[PDF Download Error]:', err);
       setPdfError(err.message || 'Failed to generate PDF');
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
+
+  const handleSharePdf = async () => {
+    if (!gymId) {
+      setPdfError('Gym context not available for PDF sharing.');
+      return;
+    }
+    setIsDownloadingPdf(true);
+    setPdfError('');
+    try {
+      const blob = await fetchReceiptPdfBlob(gymId, {
+        receiptNo: receiptId,
+        gymName: receipt.gymName,
+        memberName: receipt.recipientName,
+        rollNo: receipt.rollNo || '',
+        phone: receipt.recipientPhone || '',
+        planName: receipt.planName,
+        amount: receipt.amount,
+        mode: receipt.mode,
+        date: receipt.date,
+        shift: receipt.shift || '',
+        validUntil: receipt.validUntil || '',
+        type: receipt.type || 'MEMBER'
+      });
+
+      const fileName = `Receipt-${receiptId}.pdf`;
+      const pdfFile = new File([blob], fileName, { type: 'application/pdf' });
+
+      if (navigator?.canShare && navigator.canShare({ files: [pdfFile] })) {
+        await navigator.share({
+          files: [pdfFile],
+          title: `${receipt.gymName} Receipt #${receiptId}`,
+          text: `Fee receipt #${receiptId} for ${receipt.recipientName}`
+        });
+      } else {
+        // Fallback for desktop browsers that don't support file sharing
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+      }
+    } catch (err) {
+      if (err?.name !== 'AbortError') {
+        console.error('[PDF Share Error]:', err);
+        setPdfError(err.message || 'Failed to share PDF');
+      }
     } finally {
       setIsDownloadingPdf(false);
     }
@@ -328,22 +381,34 @@ export default function WhatsAppReceiptModal({
             </div>
           )}
 
-          <div className="flex gap-2.5 pt-1">
-            {/* Download PDF Button */}
+          <div className="flex flex-wrap gap-2 pt-1">
+            {/* Download & Share PDF Buttons */}
             {!isPlanSummary && (
-              <button
-                type="button"
-                onClick={handleDownloadPdf}
-                disabled={isDownloadingPdf}
-                className="flex-1 py-2.5 bg-[#060b0e] hover:bg-slate-900 border border-cyan-500/30 text-cyan-300 font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 disabled:opacity-60"
-              >
-                {isDownloadingPdf ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Download className="w-3.5 h-3.5" />
-                )}
-                {isDownloadingPdf ? 'Generating...' : 'Download PDF'}
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={handleDownloadPdf}
+                  disabled={isDownloadingPdf || isSending}
+                  className="flex-1 min-w-[110px] py-2.5 bg-[#060b0e] hover:bg-slate-900 border border-cyan-500/30 text-cyan-300 font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 disabled:opacity-60"
+                >
+                  {isDownloadingPdf ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5" />
+                  )}
+                  {isDownloadingPdf ? 'Generating...' : 'Download PDF'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSharePdf}
+                  disabled={isDownloadingPdf || isSending}
+                  className="flex-1 min-w-[100px] py-2.5 bg-[#060b0e] hover:bg-slate-900 border border-emerald-500/30 text-emerald-300 font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 disabled:opacity-60"
+                  title="One-tap share PDF directly to WhatsApp on mobile"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  Share PDF
+                </button>
+              </>
             )}
 
             <button

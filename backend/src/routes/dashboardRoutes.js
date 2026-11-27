@@ -19,13 +19,16 @@ const {
   getImageKitAuth,
   recordMemberCheckIn,
   downloadReceiptPdf,
-  generateReceiptPdfFromBody
+  generateReceiptPdfFromBody,
+  updateMember,
+  getAuditLogs
 } = require('../controllers/dashboardController');
 const {
   protect,
   optionalAuth,
   superAdminOnly,
-  authorizeGymScope
+  authorizeGymScope,
+  requireActiveSubscription
 } = require('../middleware/authMiddleware');
 
 // Bootstrap dashboard state (scoped by JWT role: SUPER_ADMIN vs GYM_OWNER)
@@ -40,17 +43,19 @@ router.post('/superadmin/payments', protect, superAdminOnly, recordSaasPayment);
 router.delete('/superadmin/payments/:paymentId', protect, superAdminOnly, deleteSaasPayment);
 router.put('/superadmin/settings', protect, superAdminOnly, updatePlatformSettings);
 
-// Gym Owner routes (scoped per authenticated gymId or SUPER_ADMIN)
-router.post('/gyms/:gymId/members', protect, authorizeGymScope, createMember);
-router.patch('/gyms/:gymId/members/:memberId/status', protect, authorizeGymScope, toggleMemberStatus);
-router.delete('/gyms/:gymId/members/:memberId', protect, authorizeGymScope, deleteMember);
-router.post('/gyms/:gymId/plans', protect, authorizeGymScope, createGymPlan);
-router.delete('/gyms/:gymId/plans/:planId', protect, authorizeGymScope, deleteGymPlan);
-router.post('/gyms/:gymId/payments', protect, authorizeGymScope, recordMemberPayment);
-router.patch('/gyms/:gymId/members/:memberId/reminder', protect, authorizeGymScope, markMemberReminderSent);
-router.get('/gyms/:gymId/imagekit-auth', protect, authorizeGymScope, getImageKitAuth);
-router.post('/gyms/:gymId/check-in', protect, authorizeGymScope, recordMemberCheckIn);
-router.get('/gyms/:gymId/payments/:paymentId/receipt-pdf', protect, authorizeGymScope, downloadReceiptPdf);
-router.post('/gyms/:gymId/receipt-pdf', protect, authorizeGymScope, generateReceiptPdfFromBody);
+// Gym Owner routes (scoped per authenticated gymId or SUPER_ADMIN, requires active SaaS subscription)
+router.post('/gyms/:gymId/members', protect, authorizeGymScope, requireActiveSubscription, createMember);
+router.put('/gyms/:gymId/members/:memberId', protect, authorizeGymScope, requireActiveSubscription, updateMember);
+router.patch('/gyms/:gymId/members/:memberId/status', protect, authorizeGymScope, requireActiveSubscription, toggleMemberStatus);
+router.delete('/gyms/:gymId/members/:memberId', protect, authorizeGymScope, requireActiveSubscription, deleteMember);
+router.post('/gyms/:gymId/plans', protect, authorizeGymScope, requireActiveSubscription, createGymPlan);
+router.delete('/gyms/:gymId/plans/:planId', protect, authorizeGymScope, requireActiveSubscription, deleteGymPlan);
+router.post('/gyms/:gymId/payments', protect, authorizeGymScope, requireActiveSubscription, recordMemberPayment);
+router.patch('/gyms/:gymId/members/:memberId/reminder', protect, authorizeGymScope, requireActiveSubscription, markMemberReminderSent);
+router.get('/gyms/:gymId/imagekit-auth', protect, authorizeGymScope, requireActiveSubscription, getImageKitAuth);
+router.post('/gyms/:gymId/check-in', protect, authorizeGymScope, requireActiveSubscription, recordMemberCheckIn);
+router.get('/gyms/:gymId/payments/:paymentId/receipt-pdf', protect, authorizeGymScope, requireActiveSubscription, downloadReceiptPdf);
+router.post('/gyms/:gymId/receipt-pdf', protect, authorizeGymScope, requireActiveSubscription, generateReceiptPdfFromBody);
+router.get('/gyms/:gymId/audit-logs', protect, authorizeGymScope, requireActiveSubscription, getAuditLogs);
 
 module.exports = router;

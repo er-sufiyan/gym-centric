@@ -143,6 +143,19 @@ export default function App() {
     };
   }, [isAdminRoute, adminSession?.token, authenticatedOwner?.token, syncFromDatabase]);
 
+  // Auto-retry backend connection when offline / waking up (e.g. cold start)
+  useEffect(() => {
+    if (dbConnected) return;
+    const token = isAdminRoute ? adminSession?.token : authenticatedOwner?.token || '';
+    if (isAdminRoute && !token) return;
+
+    const timer = setInterval(() => {
+      syncFromDatabase(token);
+    }, 10000);
+
+    return () => clearInterval(timer);
+  }, [dbConnected, isAdminRoute, adminSession?.token, authenticatedOwner?.token, syncFromDatabase]);
+
   const normalizeDigits = (val = '') => String(val || '').replace(/\D/g, '').slice(-10);
 
   const loggedInGym = authenticatedOwner

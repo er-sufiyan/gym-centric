@@ -150,6 +150,56 @@ class EmailService {
       return { success: true, mode: 'CONSOLE_FALLBACK', error: err.message };
     }
   }
+
+  /**
+   * Send PDF Billing Receipt / Status Notice to Member Email
+   */
+  async sendReceiptEmail(toEmail, opts, pdfBuffer, pdfFilename = 'Receipt.pdf') {
+    const cleanEmail = String(toEmail || '').trim();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return { success: false, mode: 'NO_EMAIL' };
+    }
+
+    const transporter = this.createTransporter();
+    if (!transporter) {
+      console.log(`[EMAIL RECEIPT - SIMULATION] ${pdfFilename} -> ${cleanEmail}`);
+      return { success: true, mode: 'DEVELOPMENT_SIMULATION' };
+    }
+
+    const fromAddress = (process.env.SMTP_FROM || process.env.SMTP_USER).trim();
+    const gymName = opts.gymName || 'GymCentric';
+    const isStatusChange =
+      opts.type === 'STATUS_CHANGE_ACTIVE' || opts.type === 'STATUS_CHANGE_EXPIRED';
+    const subject = isStatusChange
+      ? `${gymName}: Membership Status Update (${opts.type === 'STATUS_CHANGE_ACTIVE' ? 'ACTIVE' : 'EXPIRED'})`
+      : `${gymName}: Official Fee Receipt #${opts.receiptNo || ''}`;
+
+    const text = isStatusChange
+      ? `Hi ${opts.memberName}, your membership status at ${gymName} has been updated. Please see the attached PDF notice.`
+      : `Hi ${opts.memberName}, thank you for your payment of Rs. ${Number(opts.amount || 0).toLocaleString('en-IN')} (${opts.mode || 'CASH'}) at ${gymName}. Please find your official PDF receipt attached.`;
+
+    try {
+      await transporter.sendMail({
+        from: `"${gymName}" <${fromAddress}>`,
+        to: cleanEmail,
+        subject,
+        text,
+        attachments: pdfBuffer
+          ? [
+              {
+                filename: pdfFilename,
+                content: pdfBuffer,
+                contentType: 'application/pdf'
+              }
+            ]
+          : []
+      });
+      return { success: true, mode: 'EMAIL_PDF_DISPATCH' };
+    } catch (err) {
+      console.error('[Email Receipt Error]:', err.message);
+      return { success: false, mode: 'EMAIL_ERROR', error: err.message };
+    }
+  }
 }
 
 module.exports = new EmailService();
