@@ -76,6 +76,7 @@ export default function GymDashboard({
   const [selectedDetailMember, setSelectedDetailMember] = useState(null);
   const [memberToRemove, setMemberToRemove] = useState(null);
   const [receiptToSend, setReceiptToSend] = useState(null);
+  const [pendingSaveAction, setPendingSaveAction] = useState(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -335,65 +336,18 @@ export default function GymDashboard({
       return;
     }
 
+    const cleanPhoneDigits = newMember.phone.replace(/\D/g, '');
+    if (cleanPhoneDigits.length < 10) {
+      setAddMemberError('Please enter a valid 10+ digit WhatsApp phone number.');
+      return;
+    }
+
     setAddMemberError('');
     const fallbackPlan = gymPlans[0] || { id: '', name: '1 Month Standard', durationDays: 30, price: 1200 };
     const resolvedPlanName = String(newMember.planName || fallbackPlan.name || '1 Month Standard').trim();
     const resolvedPlanPrice = Number(newMember.planPrice) > 0 ? Number(newMember.planPrice) : Number(fallbackPlan.price || 1200);
     const resolvedDurationDays =
       Number(newMember.planDurationDays) > 0 ? Number(newMember.planDurationDays) : Number(fallbackPlan.durationDays || 30);
-
-    if (dbConnected) {
-      setIsSavingMember(true);
-      try {
-        let finalPhotoUrl = newMember.photoUrl;
-        let finalPhotoFileId = '';
-
-        if (compressedPhoto) {
-          const uploaded = await uploadMemberPhoto(gymProfile.id, compressedPhoto);
-          finalPhotoUrl = uploaded.photoUrl;
-          finalPhotoFileId = uploaded.photoFileId || '';
-        }
-
-        const res = await apiCreateMember(gymProfile.id, {
-          name: newMember.name.trim(),
-          rollNo: newMember.rollNo.trim(),
-          phone: newMember.phone.trim(),
-          shift: newMember.shift,
-          planName: resolvedPlanName,
-          planPrice: resolvedPlanPrice,
-          planDurationDays: resolvedDurationDays,
-          photoUrl: finalPhotoUrl,
-          photoFileId: finalPhotoFileId
-        });
-        setMembers((prev) => [res.member, ...prev]);
-        setPayments((prev) => [res.payment, ...prev]);
-        setLedgerEntries((prev) => [res.ledgerEntry || res.payment, ...prev]);
-        setIsAddModalOpen(false);
-        setCompressedPhoto(null);
-        setPhotoError('');
-        setAddMemberError('');
-        setNewMember({
-          name: '',
-          rollNo: '',
-          phone: '',
-          shift: 'MORNING',
-          selectedPlanId: fallbackPlan.id,
-          planName: fallbackPlan.name,
-          planDurationDays: fallbackPlan.durationDays,
-          planPrice: fallbackPlan.price,
-          photoUrl: ''
-        });
-        showToast(`Member "${res.member.name}" (#${res.member.rollNo}) saved & WhatsApp notification sent automatically!`);
-        return;
-      } catch (err) {
-        const msg = err?.message || 'Failed to save member. Please try again.';
-        setAddMemberError(msg);
-        showToast(msg);
-        return;
-      } finally {
-        setIsSavingMember(false);
-      }
-    }
 
     const nowDate = new Date();
     const admittedDate = nowDate.toLocaleDateString('en-GB', {
@@ -402,62 +356,135 @@ export default function GymDashboard({
       year: 'numeric'
     }).replace(/ /g, '-');
 
-    const today = new Date();
-    today.setDate(today.getDate() + Number(newMember.planDurationDays));
-    const formattedExpiry = today.toLocaleDateString('en-GB', {
+    const expiryObj = new Date();
+    expiryObj.setDate(expiryObj.getDate() + resolvedDurationDays);
+    const formattedExpiry = expiryObj.toLocaleDateString('en-GB', {
       day: '2-digit',
       month: 'short',
       year: 'numeric'
     }).replace(/ /g, '-');
 
-    const created = {
-      id: `${gymProfile.id}-m-${Date.now()}`,
-      ...newMember,
-      name: newMember.name.trim(),
-      rollNo: newMember.rollNo.trim(),
-      phone: newMember.phone.trim(),
-      admittedDate,
+    const previewReceiptNo = `RCP-${Math.floor(1000 + Math.random() * 9000)}`;
+    const snapshotMember = { ...newMember };
+    const snapshotPhoto = compressedPhoto;
+
+    const executeAddMemberSave = async () => {
+      if (dbConnected) {
+        setIsSavingMember(true);
+        try {
+          let finalPhotoUrl = snapshotMember.photoUrl;
+          let finalPhotoFileId = '';
+
+          if (snapshotPhoto) {
+            const uploaded = await uploadMemberPhoto(gymProfile.id, snapshotPhoto);
+            finalPhotoUrl = uploaded.photoUrl;
+            finalPhotoFileId = uploaded.photoFileId || '';
+          }
+
+          const res = await apiCreateMember(gymProfile.id, {
+            name: snapshotMember.name.trim(),
+            rollNo: snapshotMember.rollNo.trim(),
+            phone: snapshotMember.phone.trim(),
+            shift: snapshotMember.shift,
+            planName: resolvedPlanName,
+            planPrice: resolvedPlanPrice,
+            planDurationDays: resolvedDurationDays,
+            photoUrl: finalPhotoUrl,
+            photoFileId: finalPhotoFileId
+          });
+          setMembers((prev) => [res.member, ...prev]);
+          setPayments((prev) => [res.payment, ...prev]);
+          setLedgerEntries((prev) => [res.ledgerEntry || res.payment, ...prev]);
+          setIsAddModalOpen(false);
+          setCompressedPhoto(null);
+          setPhotoError('');
+          setAddMemberError('');
+          setNewMember({
+            name: '',
+            rollNo: '',
+            phone: '',
+            shift: 'MORNING',
+            selectedPlanId: fallbackPlan.id,
+            planName: fallbackPlan.name,
+            planDurationDays: fallbackPlan.durationDays,
+            planPrice: fallbackPlan.price,
+            photoUrl: ''
+          });
+          showToast(`Member "${res.member.name}" (#${res.member.rollNo}) saved & WhatsApp receipt sent!`);
+          return;
+        } finally {
+          setIsSavingMember(false);
+        }
+      }
+
+      const created = {
+        id: `${gymProfile.id}-m-${Date.now()}`,
+        ...snapshotMember,
+        name: snapshotMember.name.trim(),
+        rollNo: snapshotMember.rollNo.trim(),
+        phone: snapshotMember.phone.trim(),
+        admittedDate,
+        shiftTime: '',
+        expiryDate: formattedExpiry,
+        daysLeft: resolvedDurationDays,
+        status: 'ACTIVE',
+        rank: null,
+        photoUrl:
+          snapshotMember.photoUrl ||
+          'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&h=150&fit=crop&crop=faces'
+      };
+
+      setMembers((prev) => [created, ...prev]);
+
+      const initialFee = {
+        id: `${gymProfile.id}-p-${Date.now()}`,
+        receiptNo: previewReceiptNo,
+        memberId: created.id,
+        memberName: created.name,
+        rollNo: created.rollNo,
+        amount: resolvedPlanPrice,
+        mode: 'CASH',
+        planName: created.planName,
+        date: admittedDate
+      };
+      setPayments((prev) => [initialFee, ...prev]);
+      setLedgerEntries((prev) => [initialFee, ...prev]);
+
+      setIsAddModalOpen(false);
+      setCompressedPhoto(null);
+      setPhotoError('');
+      setAddMemberError('');
+      setNewMember({
+        name: '',
+        rollNo: '',
+        phone: '',
+        shift: 'MORNING',
+        selectedPlanId: fallbackPlan.id,
+        planName: fallbackPlan.name,
+        planDurationDays: fallbackPlan.durationDays,
+        planPrice: fallbackPlan.price,
+        photoUrl: ''
+      });
+      showToast(`${created.name} (#${created.rollNo}) registered as ACTIVE member!`);
+    };
+
+    // Show receipt/greeting preview BEFORE saving; save only runs when user clicks Send via WhatsApp
+    setPendingSaveAction(() => executeAddMemberSave);
+    setReceiptToSend({
+      type: isProPlan ? 'MEMBER_WELCOME' : 'MEMBER',
+      receiptNo: previewReceiptNo,
+      gymName: gymProfile?.gymName || 'GymCentric Gym',
+      recipientName: snapshotMember.name.trim(),
+      recipientPhone: snapshotMember.phone.trim(),
+      rollNo: snapshotMember.rollNo.trim(),
+      shift: snapshotMember.shift,
       shiftTime: '',
-      expiryDate: formattedExpiry,
-      daysLeft: Number(newMember.planDurationDays),
-      status: 'ACTIVE',
-      rank: null,
-      photoUrl:
-        newMember.photoUrl ||
-        'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&h=150&fit=crop&crop=faces'
-    };
-
-    setMembers((prev) => [created, ...prev]);
-
-    const receiptNo = `RCP-${Math.floor(1000 + Math.random() * 9000)}`;
-    const initialFee = {
-      id: `${gymProfile.id}-p-${Date.now()}`,
-      receiptNo,
-      memberId: created.id,
-      memberName: created.name,
-      rollNo: created.rollNo,
-      amount: Number(newMember.planPrice),
+      planName: resolvedPlanName,
+      amount: resolvedPlanPrice,
       mode: 'CASH',
-      planName: created.planName,
-      date: admittedDate
-    };
-    setPayments((prev) => [initialFee, ...prev]);
-    setLedgerEntries((prev) => [initialFee, ...prev]);
-
-    setIsAddModalOpen(false);
-    const defaultPlan = gymPlans[0] || { id: '', name: '1 Month Standard', durationDays: 30, price: 1200 };
-    setNewMember({
-      name: '',
-      rollNo: '',
-      phone: '',
-      shift: 'MORNING',
-      selectedPlanId: defaultPlan.id,
-      planName: defaultPlan.name,
-      planDurationDays: defaultPlan.durationDays,
-      planPrice: defaultPlan.price,
-      photoUrl: ''
+      date: admittedDate,
+      validUntil: formattedExpiry
     });
-    showToast(`${created.name} (#${created.rollNo}) registered as ACTIVE member!`);
   };
 
   const openPayForMember = (member) => {
@@ -480,68 +507,96 @@ export default function GymDashboard({
     const targetMember = members.find((m) => m.id === payForm.memberId);
     if (!targetMember) return;
 
-    if (dbConnected) {
-      try {
+    const cleanPhoneDigits = String(targetMember.phone || '').replace(/\D/g, '');
+    if (cleanPhoneDigits.length < 10) {
+      showToast('Member does not have a valid 10+ digit WhatsApp phone number.');
+      return;
+    }
+
+    const previewReceiptNo = `RCP-${Math.floor(1000 + Math.random() * 9000)}`;
+    const payDate = new Date()
+      .toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+      .replace(/ /g, '-');
+
+    const today = new Date();
+    today.setDate(today.getDate() + Number(payForm.extendDays));
+    const nextExpiry = today
+      .toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      })
+      .replace(/ /g, '-');
+
+    const snapshotPayForm = { ...payForm };
+
+    const executeRecordPaymentSave = async () => {
+      if (dbConnected) {
         const res = await apiRecordMemberPayment(gymProfile.id, {
           memberId: targetMember.id,
-          amount: Number(payForm.amount),
-          mode: payForm.mode,
-          extendDays: Number(payForm.extendDays),
-          notes: payForm.notes
+          amount: Number(snapshotPayForm.amount),
+          mode: snapshotPayForm.mode,
+          extendDays: Number(snapshotPayForm.extendDays),
+          notes: snapshotPayForm.notes
         });
         setPayments((prev) => [res.payment, ...prev]);
         setLedgerEntries((prev) => [res.ledgerEntry || res.payment, ...prev]);
         setMembers((prev) => prev.map((m) => (m.id === targetMember.id ? res.member : m)));
         setIsPaymentModalOpen(false);
-        showToast(`₹${res.payment.amount.toLocaleString()} (${res.payment.mode}) saved & WhatsApp receipt sent automatically!`);
-        return;
-      } catch (err) {
-        showToast(err.message);
+        showToast(`₹${res.payment.amount.toLocaleString()} (${res.payment.mode}) saved & WhatsApp receipt sent!`);
         return;
       }
-    }
 
-    const receiptNo = `RCP-${Math.floor(1000 + Math.random() * 9000)}`;
-    const payDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-');
-    const newPayment = {
-      id: `${gymProfile.id}-p-${Date.now()}`,
-      receiptNo,
-      memberId: targetMember.id,
-      memberName: targetMember.name,
-      rollNo: targetMember.rollNo,
-      amount: Number(payForm.amount),
-      mode: payForm.mode,
-      planName: payForm.notes,
-      date: payDate
+      const newPayment = {
+        id: `${gymProfile.id}-p-${Date.now()}`,
+        receiptNo: previewReceiptNo,
+        memberId: targetMember.id,
+        memberName: targetMember.name,
+        rollNo: targetMember.rollNo,
+        amount: Number(snapshotPayForm.amount),
+        mode: snapshotPayForm.mode,
+        planName: snapshotPayForm.notes,
+        date: payDate
+      };
+      setPayments((prev) => [newPayment, ...prev]);
+      setLedgerEntries((prev) => [newPayment, ...prev]);
+
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.id === targetMember.id
+            ? {
+                ...m,
+                status: 'ACTIVE',
+                planName: snapshotPayForm.notes,
+                planPrice: Number(snapshotPayForm.amount),
+                daysLeft: Number(snapshotPayForm.extendDays),
+                expiryDate: nextExpiry
+              }
+            : m
+        )
+      );
+
+      setIsPaymentModalOpen(false);
+      showToast(`₹${Number(snapshotPayForm.amount).toLocaleString()} (${snapshotPayForm.mode}) saved — ${targetMember.name} is ACTIVE.`);
     };
-    setPayments((prev) => [newPayment, ...prev]);
-    setLedgerEntries((prev) => [newPayment, ...prev]);
 
-    const today = new Date();
-    today.setDate(today.getDate() + Number(payForm.extendDays));
-    const nextExpiry = today.toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    }).replace(/ /g, '-');
-
-    setMembers((prev) =>
-      prev.map((m) =>
-        m.id === targetMember.id
-          ? {
-              ...m,
-              status: 'ACTIVE',
-              planName: payForm.notes,
-              planPrice: Number(payForm.amount),
-              daysLeft: Number(payForm.extendDays),
-              expiryDate: nextExpiry
-            }
-          : m
-      )
-    );
-
-    setIsPaymentModalOpen(false);
-    showToast(`₹${Number(payForm.amount).toLocaleString()} (${payForm.mode}) saved — ${targetMember.name} is ACTIVE.`);
+    // Show receipt preview BEFORE saving; save only runs when user clicks Send via WhatsApp
+    setPendingSaveAction(() => executeRecordPaymentSave);
+    setReceiptToSend({
+      type: 'MEMBER',
+      receiptNo: previewReceiptNo,
+      gymName: gymProfile?.gymName || 'GymCentric Gym',
+      recipientName: targetMember.name,
+      recipientPhone: targetMember.phone,
+      rollNo: targetMember.rollNo,
+      shift: targetMember.shift,
+      shiftTime: targetMember.shiftTime,
+      planName: snapshotPayForm.notes,
+      amount: Number(snapshotPayForm.amount),
+      mode: snapshotPayForm.mode,
+      date: payDate,
+      validUntil: nextExpiry
+    });
   };
 
   const openMemberReceipt = (payment, explicitMember) => {
@@ -553,6 +608,7 @@ export default function GymDashboard({
           (m.rollNo === payment.rollNo && m.name === payment.memberName)
       );
 
+    setPendingSaveAction(null);
     setReceiptToSend({
       type: 'MEMBER',
       receiptNo: payment.receiptNo || `RCP-${String(payment.id).slice(-4).toUpperCase()}`,
@@ -1894,8 +1950,13 @@ export default function GymDashboard({
 
       <WhatsAppReceiptModal
         isOpen={!!receiptToSend}
-        onClose={() => setReceiptToSend(null)}
+        onClose={() => {
+          setReceiptToSend(null);
+          setPendingSaveAction(null);
+        }}
         receipt={receiptToSend}
+        onConfirmSend={pendingSaveAction}
+        requireSendToSave={Boolean(pendingSaveAction)}
         onSent={(msg) => showToast(msg)}
         gymId={gymProfile?.id}
       />

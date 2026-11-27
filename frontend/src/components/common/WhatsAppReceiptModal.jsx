@@ -9,9 +9,18 @@ function sanitizePhoneForWa(phone) {
   return digits;
 }
 
-export default function WhatsAppReceiptModal({ isOpen, onClose, receipt, onSent, gymId }) {
+export default function WhatsAppReceiptModal({
+  isOpen,
+  onClose,
+  receipt,
+  onSent,
+  onConfirmSend,
+  requireSendToSave = false,
+  gymId
+}) {
   const [copied, setCopied] = useState(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const [pdfError, setPdfError] = useState('');
 
   if (!isOpen || !receipt) return null;
@@ -50,7 +59,6 @@ export default function WhatsAppReceiptModal({ isOpen, onClose, receipt, onSent,
       receipt.validUntil ? `✅ *Valid Until:* ${receipt.validUntil}` : null,
       `🧾 *Receipt:* #${receiptId} • ₹${Number(receipt.amount).toLocaleString()} (${receipt.mode})`,
       ``,
-      `📄 A PDF receipt has been auto-generated for your records.`,
       `See you on the floor! Stay strong 💪`
     ].filter((line) => line !== null);
   } else if (receipt.type === 'SAAS_WELCOME') {
@@ -91,7 +99,6 @@ export default function WhatsAppReceiptModal({ isOpen, onClose, receipt, onSent,
       `Date: ${receipt.date}`,
       receipt.validUntil ? `Valid Until: ${receipt.validUntil}` : null,
       ``,
-      `📄 A PDF receipt has been auto-generated for your records.`,
       `Thank you for training with ${receipt.gymName}!`
     ].filter(Boolean);
   }
@@ -146,7 +153,20 @@ export default function WhatsAppReceiptModal({ isOpen, onClose, receipt, onSent,
     }
   };
 
-  const handleSendWhatsApp = () => {
+  const handleSendWhatsApp = async () => {
+    setPdfError('');
+    if (onConfirmSend) {
+      setIsSending(true);
+      try {
+        await onConfirmSend();
+      } catch (err) {
+        setPdfError(err?.message || 'Could not complete save. Please check details and try again.');
+        setIsSending(false);
+        return;
+      }
+      setIsSending(false);
+    }
+
     window.open(waUrl, '_blank', 'noopener,noreferrer');
     if (onSent) {
       onSent(
@@ -257,11 +277,27 @@ export default function WhatsAppReceiptModal({ isOpen, onClose, receipt, onSent,
             )}
           </div>
 
-          {/* Auto-notification badge */}
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-            <span className="text-[10px] font-semibold text-emerald-300">
-              Automatic WhatsApp notification has been sent to the member for all billing events.
+          {/* Notice badge */}
+          <div
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${
+              requireSendToSave
+                ? 'bg-amber-500/10 border-amber-500/30'
+                : 'bg-emerald-500/10 border-emerald-500/20'
+            }`}
+          >
+            <CheckCircle2
+              className={`w-3.5 h-3.5 flex-shrink-0 ${
+                requireSendToSave ? 'text-amber-400' : 'text-emerald-400'
+              }`}
+            />
+            <span
+              className={`text-[10px] font-semibold ${
+                requireSendToSave ? 'text-amber-300' : 'text-emerald-300'
+              }`}
+            >
+              {requireSendToSave
+                ? 'Review receipt before saving. Click "Send via WhatsApp" to send & complete save — closing will cancel without saving.'
+                : 'Receipt ready to send via WhatsApp or download as PDF.'}
             </span>
           </div>
 
@@ -313,17 +349,29 @@ export default function WhatsAppReceiptModal({ isOpen, onClose, receipt, onSent,
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-colors"
+              disabled={isSending}
+              className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-colors disabled:opacity-60"
             >
-              Close
+              {requireSendToSave ? 'Cancel' : 'Close'}
             </button>
             <button
               type="button"
               onClick={handleSendWhatsApp}
-              className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-[#060b0e] font-extrabold rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20"
+              disabled={isSending}
+              className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-[#060b0e] font-extrabold rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20 disabled:opacity-60"
             >
-              <Send className="w-3.5 h-3.5" />{' '}
-              {isPlanSummary ? 'Send Active Plan' : isWelcome ? 'Send Greeting on WhatsApp' : 'Send via WhatsApp'}
+              {isSending ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Send className="w-3.5 h-3.5" />
+              )}{' '}
+              {isSending
+                ? 'Saving & Sending...'
+                : isPlanSummary
+                ? 'Send Active Plan'
+                : isWelcome
+                ? 'Send Greeting on WhatsApp'
+                : 'Send via WhatsApp'}
             </button>
           </div>
         </div>
